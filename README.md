@@ -1,5 +1,7 @@
 # Electrolyte Explorer
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/weixiangze2005-creator/ionmix)
+
 一个可本地运行的电解液二元溶剂与配比预筛选系统。输入锂盐、温度、浓度、应用场景和目标权重，系统会搜索候选溶剂组合、优化起始比例，并输出评分、置信度、推荐理由和数据覆盖情况。
 
 ## 快速启动
