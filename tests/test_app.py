@@ -1,3 +1,7 @@
+import os
+
+os.environ["IONMIX_CONDUCTIVITY_MODEL"] = "enabled"
+
 from fastapi.testclient import TestClient
 
 from app.main import app

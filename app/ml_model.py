@@ -26,10 +26,10 @@ class ConductivityModel:
             "off",
             "disabled",
         }
-        # Render's free Python instances currently provide 512 MB RAM. Loading
-        # the full ExtraTrees conductivity model can exceed that at runtime, so
-        # cloud deployments stay in lightweight mode unless explicitly enabled.
-        self.disabled = explicitly_disabled or (bool(os.getenv("RENDER")) and not explicitly_enabled)
+        # Loading the full ExtraTrees conductivity model can exceed Render's
+        # free 512 MB memory limit. Keep production lightweight by default;
+        # local scripts/tests explicitly opt into the full model.
+        self.disabled = explicitly_disabled or not explicitly_enabled
         if path.exists() and not self.disabled:
             self.bundle = joblib.load(path)
 
