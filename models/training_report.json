@@ -1,0 +1,8 @@
+{
+  "mae": 1.1942,
+  "r2": 0.7406,
+  "train_rows": 9915,
+  "test_rows": 3320,
+  "group_split": "DOI",
+  "target": "conductivity k as reported by CALiSol-23"
+}

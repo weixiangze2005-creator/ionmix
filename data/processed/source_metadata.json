@@ -1,0 +1,9 @@
+{
+  "calisol_url": "https://raw.githubusercontent.com/Pele0599/CALiSol-23/main/CALiSol-23%20Dataset.csv",
+  "calisol_smiles_url": "https://raw.githubusercontent.com/Pele0599/CALiSol-23/main/calisolsmile.csv",
+  "pubchem_api": "PUG REST",
+  "pubchem_api_docs": "https://pubchem.ncbi.nlm.nih.gov/docs/pug-rest",
+  "records": 26,
+  "pubchem_failures": [],
+  "note": "Physical-property seed values are screening priors. PubChem supplies identity and molecular descriptors."
+}

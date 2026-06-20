@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Electrolyte Explorer</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="hero">
+    <nav>
+      <div class="brand"><span class="brand-mark">E</span> Electrolyte Explorer</div>
+      <div class="model-pill" id="model-pill">模型状态检查中</div>
+    </nav>
+    <div class="hero-copy">
+      <div class="eyebrow">MOLECULE → MIXTURE → EXPERIMENT</div>
+      <h1>从目标性质出发，<br><em>反向筛选</em>电解液配方</h1>
+      <p>输入锂盐、温度与研发侧重点，系统搜索二元溶剂组合和起始配比，并展示推荐依据、模型覆盖范围与不确定性。</p>
+    </div>
+    <div class="pipeline">
+      <span>公开数据</span><i></i><span>RDKit 表征</span><i></i><span>性质预测</span><i></i><span>配比优化</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="workspace">
+      <aside class="panel controls">
+        <div class="section-number">01 / DEFINE</div>
+        <h2>定义筛选任务</h2>
+
+        <label>目标锂盐
+          <div class="input-with-tag">
+            <input id="salt" value="LiNO3" placeholder="例如 LiNO3 或 硝酸锂">
+            <span>支持中文</span>
+          </div>
+        </label>
+
+        <div class="two-col">
+          <label>温度 / °C
+            <input id="temperature" type="number" value="25" min="-60" max="150">
+          </label>
+          <label>盐浓度 / mol·kg⁻¹
+            <input id="concentration" type="number" value="1" min="0.1" max="10" step="0.1">
+          </label>
+        </div>
+
+        <label>应用场景
+          <select id="application">
+            <option value="lithium_metal">锂金属 / 负极稳定优先</option>
+            <option value="high_voltage">高电压 / 抗氧化优先</option>
+            <option value="balanced">均衡型体系</option>
+          </select>
+        </label>
+
+        <div class="section-divider"></div>
+        <div class="section-number">02 / PRIORITIZE</div>
+        <div class="weight-heading">
+          <h3>目标权重</h3>
+          <span id="weight-total">总权重 100%</span>
+        </div>
+        <p class="weight-help">权重按从上到下的顺序锁定。调整某一项时，上方已选权重保持不变，仅下方项目自动分配剩余比例；总和始终为 100%。</p>
+        <div id="weights"></div>
+
+        <details>
+          <summary>实验与安全约束</summary>
+          <div class="detail-grid">
+            <label>最低估算闪点 / °C
+              <input id="flash" type="number" value="-20">
+            </label>
+            <label>最高混合黏度 / mPa·s
+              <input id="viscosity" type="number" value="6" min="0.1" step="0.1">
+            </label>
+            <label class="check"><input id="hazard" type="checkbox" checked> 排除高危溶剂先验</label>
+          </div>
+        </details>
+
+        <button id="run">开始筛选 <span>→</span></button>
+        <p class="microcopy">输出是实验起点，不替代溶解度、电化学窗口与电池验证。</p>
+      </aside>
+
+      <section class="results">
+        <div class="results-head">
+          <div>
+            <div class="section-number">03 / RANK</div>
+            <h2>候选配方</h2>
+          </div>
+          <div class="search-stat" id="search-stat">等待运行</div>
+        </div>
+        <div id="notice" class="notice hidden"></div>
+        <div id="loading" class="loading hidden">
+          <div class="orb"></div>
+          <p>正在搜索组合与配比…</p>
+        </div>
+        <div id="empty" class="empty">
+          <div class="molecule-art"><span></span><span></span><span></span><span></span></div>
+          <h3>准备探索候选空间</h3>
+          <p>系统将比较溶剂化能力、传输、稳定性、安全性和低温表现。</p>
+        </div>
+        <div id="cards" class="cards"></div>
+      </section>
+    </section>
+
+    <section class="method">
+      <div>
+        <div class="section-number">HOW IT WORKS</div>
+        <h2>不是让语言模型猜答案，<br>而是让数据与约束共同排序。</h2>
+      </div>
+      <div class="method-grid">
+        <article><b>1</b><h3>结构标准化</h3><p>PubChem 获取化合物身份，RDKit 计算分子量、极性表面积、氢键受体等描述符。</p></article>
+        <article><b>2</b><h3>性质预测</h3><p>CALiSol-23 训练电导率模型；训练集外的盐自动切换到物理启发式并降低置信度。</p></article>
+        <article><b>3</b><h3>配比搜索</h3><p>枚举二元组合和 10:90 至 90:10 的比例，应用温度、黏度、闪点与场景约束。</p></article>
+        <article><b>4</b><h3>可解释排序</h3><p>输出各目标分数、估算性质、数据覆盖情况和推荐理由，便于设计下一轮实验。</p></article>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Data: CALiSol-23 · PubChem PUG REST</span>
+    <span>Cheminformatics: RDKit</span>
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

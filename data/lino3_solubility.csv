@@ -1,0 +1,26 @@
+salt,solvent,smiles,temperature_c,solubility_mole_fraction,relative_uncertainty,source_doi,source_note
+LiNO3,AN,CC#N,25,0.0174,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,AN,CC#N,30,0.0185,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,AN,CC#N,35,0.0195,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,AN,CC#N,40,0.0206,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,AN,CC#N,45,0.0216,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,Ethanol,CCO,25,0.176,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,Ethanol,CCO,30,0.179,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,Ethanol,CCO,35,0.181,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,Ethanol,CCO,40,0.184,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,Ethanol,CCO,45,0.185,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,DMC,COC(=O)OC,25,0.000206,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,DMC,COC(=O)OC,30,0.000231,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,DMC,COC(=O)OC,35,0.000260,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,DMC,COC(=O)OC,40,0.000295,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,DMC,COC(=O)OC,45,0.000334,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,DMSO,CS(=O)C,25,0.232,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,DMSO,CS(=O)C,30,0.241,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,DMSO,CS(=O)C,35,0.251,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,DMSO,CS(=O)C,40,0.261,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,DMSO,CS(=O)C,45,0.270,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,PC,CC1COC(=O)O1,25,0.0141,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,PC,CC1COC(=O)O1,30,0.0153,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,PC,CC1COC(=O)O1,35,0.0169,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,PC,CC1COC(=O)O1,40,0.0186,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement
+LiNO3,PC,CC1COC(=O)O1,45,0.0205,0.05,10.1016/j.fluid.2017.12.034,ICP-OES equilibrium measurement

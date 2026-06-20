@@ -1,0 +1,11 @@
+{
+  "rows": 25,
+  "unique_solvents": 5,
+  "temperature_min_c": 25.0,
+  "temperature_max_c": 45.0,
+  "leave_one_solvent_out_mae_log10": 0.8017,
+  "leave_one_solvent_out_r2_log10": 0.0105,
+  "prediction_model": "Ridge(alpha=10) with ExtraTrees uncertainty ensemble",
+  "primary_source_doi": "10.1016/j.fluid.2017.12.034",
+  "primary_measurement_uncertainty": "5%"
+}

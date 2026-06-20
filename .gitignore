@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.docx
+
+# Keep trained model artifacts in the repository for cloud deployment.
+# The largest current model is below GitHub's 100 MB per-file limit.
+
+data/raw/*.csv
+data/raw/*.pdf
+data/raw/*.txt
+.server.pid

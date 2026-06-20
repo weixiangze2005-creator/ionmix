@@ -1,0 +1,27 @@
+code,name,aliases,smiles,dielectric_constant,viscosity_mpas,boiling_point_c,flash_point_c,donor_number,price_level,battery_role
+EC,Ethylene carbonate,碳酸乙烯酯,C1COC(=O)O1,89.8,1.90,248,160,16.4,2,high-permittivity
+PC,Propylene carbonate,碳酸丙烯酯,CC1COC(=O)O1,64.9,2.53,242,132,15.1,2,high-permittivity
+DMC,Dimethyl carbonate,碳酸二甲酯,COC(=O)OC,3.1,0.59,90,18,17.2,1,low-viscosity
+EMC,Ethyl methyl carbonate,碳酸甲乙酯,CCOC(=O)OC,2.9,0.65,108,23,16.5,2,low-viscosity
+DEC,Diethyl carbonate,碳酸二乙酯,CCOC(=O)OCC,2.8,0.75,126,33,16.0,1,low-viscosity
+DME,"1,2-Dimethoxyethane",glyme;乙二醇二甲醚,COCCOC,7.2,0.46,85,-2,20.0,1,ether-solvating
+DMSO,Dimethyl sulfoxide,二甲基亚砜,CS(=O)C,46.7,1.99,189,87,29.8,1,strong-donor
+AN,Acetonitrile,乙腈,CC#N,35.9,0.37,82,2,14.1,1,low-viscosity-polar
+EA,Ethyl acetate,乙酸乙酯,CCOC(=O)C,6.0,0.45,77,-4,17.1,1,low-viscosity
+MA,Methyl acetate,乙酸甲酯,CC(=O)OC,6.7,0.36,57,-10,16.5,1,low-temperature
+FEC,Fluoroethylene carbonate,氟代碳酸乙烯酯,C1C(OC(=O)O1)F,78.4,3.50,212,102,15.0,3,film-forming
+DOL,"1,3-Dioxolane",二氧戊环,C1COCO1,7.1,0.59,75,-1,18.0,2,ether-solvating
+2-MeTHF,2-Methyltetrahydrofuran,2-甲基四氢呋喃,CC1CCCO1,7.0,0.46,80,-11,18.0,2,low-temperature
+THF,Tetrahydrofuran,四氢呋喃,C1CCOC1,7.6,0.46,66,-14,20.0,1,ether-solvating
+Sulfolane,Sulfolane,环丁砜,O=S1(=O)CCCC1,43.3,10.3,285,166,14.8,2,high-stability
+2-Glyme,Diglyme,二甘醇二甲醚,COCCOCCOC,7.2,0.98,162,57,24.0,2,chelating-ether
+3-Glyme,Triglyme,三甘醇二甲醚,COCCOCCOCCOC,7.5,1.95,216,111,27.0,2,chelating-ether
+4-Glyme,Tetraglyme,四甘醇二甲醚,COCCOCCOCCOCCOC,7.7,3.25,275,141,30.0,2,chelating-ether
+DMF,Dimethylformamide,"N,N-二甲基甲酰胺",CN(C)C=O,36.7,0.80,153,58,26.6,1,strong-donor
+GBL,Gamma-butyrolactone,g-Butyrolactone;γ-丁内酯,C1CC(=O)OC1,39.0,1.70,204,98,18.0,2,polar-lactone
+NMP,N-Methyl-2-pyrrolidone,N-甲基吡咯烷酮,CN1CCCC1=O,32.2,1.67,202,91,27.3,2,strong-donor
+DEE,Diethyl ether,乙醚,CCOCC,4.3,0.22,35,-45,19.2,1,very-low-viscosity
+TEP,Triethyl phosphate,磷酸三乙酯,CCOP(=O)(OCC)OCC,13.0,1.60,215,115,23.0,2,flame-retarding
+TMP,Trimethyl phosphate,磷酸三甲酯,COP(=O)(OC)OC,21.0,1.75,197,107,23.0,2,flame-retarding
+BTFE,"Bis(2,2,2-trifluoroethyl) ether","双(2,2,2-三氟乙基)醚",O(CC(F)(F)F)CC(F)(F)F,6.0,0.80,94,5,8.0,3,fluorinated-diluent
+TTE,"1,1,2,2-Tetrafluoroethyl 2,2,2-trifluoroethyl ether",氟醚稀释剂,FC(F)C(F)(F)OCC(F)(F)F,6.0,1.10,92,5,5.0,3,localized-high-concentration-diluent
