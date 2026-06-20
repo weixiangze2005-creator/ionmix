@@ -88,6 +88,7 @@ updateWeightDisplay();
 async function loadModelInfo() {
   try {
     const response = await fetch("/api/model-info");
+    if (!response.ok) throw new Error("model-info unavailable");
     const info = await response.json();
     const pill = document.querySelector("#model-pill");
     const lino3Rows = info.lino3_solubility_model?.metrics?.rows || 0;
@@ -97,6 +98,24 @@ async function loadModelInfo() {
   } catch {
     document.querySelector("#model-pill").textContent = "服务连接异常";
   }
+}
+
+async function readErrorMessage(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    try {
+      const data = await response.json();
+      return data.detail || data.message || "后端接口暂时不可用";
+    } catch {
+      return "后端接口暂时不可用";
+    }
+  }
+  if (response.status === 502 || response.status === 503 || response.status === 504) {
+    return "云端服务正在重启或内存不足，请稍等 1 分钟后重试；如果反复出现，需要检查 Render 部署状态。";
+  }
+  const text = await response.text();
+  const compact = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return compact ? compact.slice(0, 240) : `请求失败，HTTP ${response.status}`;
 }
 
 function metric(label, value) {
@@ -190,7 +209,7 @@ async function runScreening() {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(body),
     });
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok) throw new Error(await readErrorMessage(response));
     const data = await response.json();
     notice.textContent = data.warning;
     notice.classList.remove("hidden");

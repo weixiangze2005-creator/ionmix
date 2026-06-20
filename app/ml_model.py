@@ -18,12 +18,18 @@ REPORT_PATH = ROOT / "models" / "training_report.json"
 class ConductivityModel:
     def __init__(self, path: Path = MODEL_PATH):
         self.bundle: dict[str, Any] | None = None
-        self.disabled = os.getenv("IONMIX_CONDUCTIVITY_MODEL", "").lower() in {
+        runtime_setting = os.getenv("IONMIX_CONDUCTIVITY_MODEL", "").lower()
+        explicitly_enabled = runtime_setting in {"1", "true", "on", "enabled"}
+        explicitly_disabled = runtime_setting in {
             "0",
             "false",
             "off",
             "disabled",
         }
+        # Render's free Python instances currently provide 512 MB RAM. Loading
+        # the full ExtraTrees conductivity model can exceed that at runtime, so
+        # cloud deployments stay in lightweight mode unless explicitly enabled.
+        self.disabled = explicitly_disabled or (bool(os.getenv("RENDER")) and not explicitly_enabled)
         if path.exists() and not self.disabled:
             self.bundle = joblib.load(path)
 
