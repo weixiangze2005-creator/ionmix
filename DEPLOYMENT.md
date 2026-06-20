@@ -49,7 +49,15 @@ Procfile
    - Runtime：Python
    - Build Command：`pip install --upgrade pip && pip install -r requirements.txt`
    - Start Command：`uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-   - Health Check Path：`/api/health`
+- Health Check Path：`/api/health`
+
+免费实例内存只有 512MB。为了让免费档稳定运行，`render.yaml` 默认设置：
+
+```text
+IONMIX_CONDUCTIVITY_MODEL=disabled
+```
+
+这会在云端启动时跳过较大的 CALiSol-23 导电率森林模型，避免实例因内存超限被杀掉。网页仍会使用分子描述符、物理启发式规则和 LiNO3 小溶解度模型进行推荐。若升级到更高内存实例，可删除该环境变量或改为 `enabled`，重新部署后恢复导电率模型。
 5. 部署完成后，Render 会先给一个 `*.onrender.com` 地址。
 6. 先打开这个地址，确认网页和推荐接口正常。
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 from math import exp, log1p
@@ -11,12 +12,19 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = ROOT / "models" / "conductivity_model.joblib"
+REPORT_PATH = ROOT / "models" / "training_report.json"
 
 
 class ConductivityModel:
     def __init__(self, path: Path = MODEL_PATH):
         self.bundle: dict[str, Any] | None = None
-        if path.exists():
+        self.disabled = os.getenv("IONMIX_CONDUCTIVITY_MODEL", "").lower() in {
+            "0",
+            "false",
+            "off",
+            "disabled",
+        }
+        if path.exists() and not self.disabled:
             self.bundle = joblib.load(path)
 
     @property
@@ -33,7 +41,17 @@ class ConductivityModel:
 
     @property
     def metrics(self) -> dict[str, float]:
-        return {} if not self.bundle else dict(self.bundle["metrics"])
+        if self.bundle:
+            return dict(self.bundle["metrics"])
+        if REPORT_PATH.exists():
+            import json
+
+            metrics = json.loads(REPORT_PATH.read_text(encoding="utf-8"))
+            metrics["runtime_status"] = (
+                "disabled_for_memory_limit" if self.disabled else "model_not_loaded"
+            )
+            return metrics
+        return {"runtime_status": "disabled_for_memory_limit"} if self.disabled else {}
 
     def predict(
         self,
