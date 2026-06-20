@@ -77,6 +77,10 @@ def recommend(request: RecommendationRequest):
         exclude_high_hazard=request.exclude_high_hazard,
         application=request.application,
         top_k=request.top_k,
+        score_threshold=request.score_threshold,
+        max_results=request.max_results,
+        max_components=request.max_components,
+        return_all_above_threshold=request.return_all_above_threshold,
         weights=request.weights.model_dump(),
         allow_relaxed_fallback=request.allow_relaxed_fallback,
     )

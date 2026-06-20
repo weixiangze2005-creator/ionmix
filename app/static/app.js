@@ -12,11 +12,15 @@ weightConfig.forEach(([key, label, value]) => {
     <div class="weight-row">
       <span>${label}</span>
       <input type="range" id="w-${key}" min="0" max="100" value="${value}">
-      <b class="weight-value" id="v-${key}">${value}</b>
+      <input class="weight-number" type="number" id="n-${key}" min="0" max="100" value="${value}">
+      <b class="weight-value" id="v-${key}">%</b>
     </div>`);
 });
 
 let adjustingWeights = false;
+let allRecommendations = [];
+let currentPage = 1;
+const pageSize = 10;
 
 function largestRemainder(values, targetTotal) {
   const floors = values.map(Math.floor);
@@ -33,7 +37,8 @@ function updateWeightDisplay() {
   weightConfig.forEach(([key]) => {
     const value = Number(document.querySelector(`#w-${key}`).value);
     total += value;
-    document.querySelector(`#v-${key}`).textContent = value;
+    document.querySelector(`#n-${key}`).value = value;
+    document.querySelector(`#v-${key}`).textContent = "%";
   });
   const totalBadge = document.querySelector("#weight-total");
   totalBadge.textContent = `总权重 ${total}%`;
@@ -82,6 +87,9 @@ weightConfig.forEach(([key]) => {
   document.querySelector(`#w-${key}`).addEventListener("input", event => {
     rebalanceWeights(key, event.target.value);
   });
+  document.querySelector(`#n-${key}`).addEventListener("change", event => {
+    rebalanceWeights(key, event.target.value);
+  });
 });
 updateWeightDisplay();
 
@@ -124,6 +132,18 @@ function metric(label, value) {
 
 function renderCard(item, index) {
   const p = item.properties;
+  const components = item.components || [
+    {code: item.solvent_a, name: item.solvent_a_name, ratio: item.ratio_a},
+    {code: item.solvent_b, name: item.solvent_b_name, ratio: item.ratio_b},
+  ];
+  const formula = components.map(component => component.code).join(" + ");
+  const names = components.map(component => component.name).join(" / ");
+  const ratioSegments = components
+    .map(component => `<i style="width:${component.ratio}%"></i>`)
+    .join("");
+  const ratioLabels = components
+    .map(component => `<span>${component.code} ${component.ratio}%</span>`)
+    .join("");
   const reasons = item.reasons.map(x => `<span class="reason">${x}</span>`).join("");
   const violations = (item.constraint_violations || [])
     .map(x => `<span class="reason violation">${x}</span>`).join("");
@@ -151,10 +171,10 @@ function renderCard(item, index) {
       <div class="card-main">
         <div class="rank">${String(index + 1).padStart(2, "0")}</div>
         <div class="formula">
-          <h3>${item.solvent_a} <span>+</span> ${item.solvent_b}</h3>
-          <div class="names">${item.solvent_a_name} / ${item.solvent_b_name}</div>
-          <div class="ratio-bar"><i style="width:${item.ratio_a}%"></i></div>
-          <div class="ratio-labels"><span>${item.solvent_a} ${item.ratio_a}%</span><span>${item.solvent_b} ${item.ratio_b}%</span></div>
+          <h3>${formula}</h3>
+          <div class="names">${names}</div>
+          <div class="ratio-bar">${ratioSegments}</div>
+          <div class="ratio-labels">${ratioLabels}</div>
         </div>
         <div class="score-group">
           <div class="score-ring" style="--score:${item.score}%"><b>${item.score}</b></div>
@@ -175,15 +195,34 @@ function renderCard(item, index) {
     </article>`;
 }
 
+function renderPage() {
+  const cards = document.querySelector("#cards");
+  const pager = document.querySelector("#pager");
+  const pageInfo = document.querySelector("#page-info");
+  const totalPages = Math.max(1, Math.ceil(allRecommendations.length / pageSize));
+  currentPage = Math.min(Math.max(currentPage, 1), totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const pageItems = allRecommendations.slice(start, start + pageSize);
+  cards.innerHTML = pageItems.map((item, index) => renderCard(item, start + index)).join("");
+  pageInfo.textContent = `第 ${currentPage} / ${totalPages} 页 · 共 ${allRecommendations.length} 个候选`;
+  document.querySelector("#prev-page").disabled = currentPage <= 1;
+  document.querySelector("#next-page").disabled = currentPage >= totalPages;
+  pager.classList.toggle("hidden", allRecommendations.length <= pageSize);
+}
+
 async function runScreening() {
   const button = document.querySelector("#run");
   const loading = document.querySelector("#loading");
   const empty = document.querySelector("#empty");
   const cards = document.querySelector("#cards");
   const notice = document.querySelector("#notice");
+  const pager = document.querySelector("#pager");
   button.disabled = true;
   empty.classList.add("hidden");
   cards.innerHTML = "";
+  allRecommendations = [];
+  currentPage = 1;
+  pager.classList.add("hidden");
   notice.classList.add("hidden");
   loading.classList.remove("hidden");
 
@@ -199,6 +238,10 @@ async function runScreening() {
     max_mixture_viscosity: Number(document.querySelector("#viscosity").value),
     exclude_high_hazard: document.querySelector("#hazard").checked,
     top_k: 10,
+    score_threshold: Number(document.querySelector("#score-threshold").value),
+    max_results: 120,
+    max_components: Number(document.querySelector("#max-components").value),
+    return_all_above_threshold: true,
     allow_relaxed_fallback: true,
     weights,
   };
@@ -214,8 +257,9 @@ async function runScreening() {
     notice.textContent = data.warning;
     notice.classList.remove("hidden");
     document.querySelector("#search-stat").textContent =
-      `${data.search_space.solvents} 种溶剂 · ${data.search_space.evaluated_formulations.toLocaleString()} 个可行配方`;
-    cards.innerHTML = data.recommendations.map(renderCard).join("");
+      `${data.search_space.solvents} 种溶剂 · ${data.search_space.evaluated_formulations.toLocaleString()} 个候选 · 返回 ${data.recommendations.length} 个`;
+    allRecommendations = data.recommendations;
+    renderPage();
     if (!data.recommendations.length) {
       empty.querySelector("h3").textContent = "当前约束下没有可行结果";
       empty.querySelector("p").textContent = "可适当降低最低闪点或提高最高黏度限制。";
@@ -232,4 +276,12 @@ async function runScreening() {
 }
 
 document.querySelector("#run").addEventListener("click", runScreening);
+document.querySelector("#prev-page").addEventListener("click", () => {
+  currentPage -= 1;
+  renderPage();
+});
+document.querySelector("#next-page").addEventListener("click", () => {
+  currentPage += 1;
+  renderPage();
+});
 loadModelInfo();

@@ -26,6 +26,9 @@ class LiNO3SolubilityModel:
 
     def _mixture_row(self, a: pd.Series, b: pd.Series, fraction_a: float, temperature_c: float) -> dict:
         fraction_b = 1.0 - fraction_a
+        return self._components_row([(a, fraction_a), (b, fraction_b)], temperature_c)
+
+    def _components_row(self, components: list[tuple[pd.Series, float]], temperature_c: float) -> dict:
         row = {"temperature_c": temperature_c}
         for feature in self.bundle["features"]:
             if feature == "temperature_c":
@@ -33,19 +36,25 @@ class LiNO3SolubilityModel:
             if feature == "viscosity_mpas":
                 row[feature] = float(
                     np.exp(
-                        fraction_a * np.log(max(float(a[feature]), 0.05))
-                        + fraction_b * np.log(max(float(b[feature]), 0.05))
+                        sum(
+                            fraction * np.log(max(float(component[feature]), 0.05))
+                            for component, fraction in components
+                        )
                     )
                 )
             else:
-                row[feature] = float(fraction_a * a[feature] + fraction_b * b[feature])
+                row[feature] = float(
+                    sum(fraction * component[feature] for component, fraction in components)
+                )
         return row
 
     def predict_many(self, requests: list[dict]) -> list[dict]:
         if not self.bundle or not requests:
             return []
         rows = [
-            self._mixture_row(
+            self._components_row(request["components"], request["temperature_c"])
+            if "components" in request
+            else self._mixture_row(
                 request["a"], request["b"], request["fraction_a"], request["temperature_c"]
             )
             for request in requests
@@ -88,11 +97,13 @@ class LiNO3SolubilityModel:
                 temperature_score = exp(
                     -min(abs(temperature_c - t_min), abs(temperature_c - t_max)) / 25.0
                 )
-            fraction_a = request["fraction_a"]
-            a, b = request["a"], request["b"]
-            component_coverage = (
-                fraction_a * (1.0 if a["code"] in known_solvents else 0.35)
-                + (1.0 - fraction_a) * (1.0 if b["code"] in known_solvents else 0.35)
+            components = request.get("components")
+            if components is None:
+                fraction_a = request["fraction_a"]
+                components = [(request["a"], fraction_a), (request["b"], 1.0 - fraction_a)]
+            component_coverage = sum(
+                fraction * (1.0 if component["code"] in known_solvents else 0.35)
+                for component, fraction in components
             )
             mole_fraction = float(mole_fractions[index])
             ml_score = float(np.clip((np.log10(mole_fraction) + 4.0) / 3.5, 0.0, 1.0))

@@ -15,7 +15,7 @@
     <div class="hero-copy">
       <div class="eyebrow">MOLECULE → MIXTURE → EXPERIMENT</div>
       <h1>从目标性质出发，<br><em>反向筛选</em>电解液配方</h1>
-      <p>输入锂盐、温度与研发侧重点，系统搜索二元溶剂组合和起始配比，并展示推荐依据、模型覆盖范围与不确定性。</p>
+      <p>输入锂盐、温度与研发侧重点，系统搜索二元/三元溶剂组合和起始配比，并展示推荐依据、模型覆盖范围与不确定性。</p>
     </div>
     <div class="pipeline">
       <span>公开数据</span><i></i><span>RDKit 表征</span><i></i><span>性质预测</span><i></i><span>配比优化</span>
@@ -61,6 +61,18 @@
         <p class="weight-help">权重按从上到下的顺序锁定。调整某一项时，上方已选权重保持不变，仅下方项目自动分配剩余比例；总和始终为 100%。</p>
         <div id="weights"></div>
 
+        <div class="two-col">
+          <label>候选组分数
+            <select id="max-components">
+              <option value="2">最多 2 种溶剂</option>
+              <option value="3">最多 3 种溶剂</option>
+            </select>
+          </label>
+          <label>最低综合评分
+            <input id="score-threshold" type="number" value="60" min="0" max="100" step="1">
+          </label>
+        </div>
+
         <details>
           <summary>实验与安全约束</summary>
           <div class="detail-grid">
@@ -97,6 +109,11 @@
           <p>系统将比较溶剂化能力、传输、稳定性、安全性和低温表现。</p>
         </div>
         <div id="cards" class="cards"></div>
+        <div id="pager" class="pager hidden">
+          <button id="prev-page" type="button">上一页</button>
+          <span id="page-info">第 1 页</span>
+          <button id="next-page" type="button">下一页</button>
+        </div>
       </section>
     </section>
 
@@ -108,7 +125,7 @@
       <div class="method-grid">
         <article><b>1</b><h3>结构标准化</h3><p>PubChem 获取化合物身份，RDKit 计算分子量、极性表面积、氢键受体等描述符。</p></article>
         <article><b>2</b><h3>性质预测</h3><p>CALiSol-23 训练电导率模型；训练集外的盐自动切换到物理启发式并降低置信度。</p></article>
-        <article><b>3</b><h3>配比搜索</h3><p>枚举二元组合和 10:90 至 90:10 的比例，应用温度、黏度、闪点与场景约束。</p></article>
+        <article><b>3</b><h3>配比搜索</h3><p>枚举二元与三元溶剂组合，应用温度、黏度、闪点与场景约束。</p></article>
         <article><b>4</b><h3>可解释排序</h3><p>输出各目标分数、估算性质、数据覆盖情况和推荐理由，便于设计下一轮实验。</p></article>
       </div>
     </section>

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import combinations
+from itertools import combinations, permutations
 from math import exp, log, sqrt
 
 import numpy as np
@@ -96,6 +96,10 @@ class RecommendationOptions:
     exclude_high_hazard: bool = True
     application: str = "lithium_metal"
     top_k: int = 10
+    score_threshold: float = 0.0
+    max_results: int = 80
+    max_components: int = 2
+    return_all_above_threshold: bool = False
     weights: dict[str, float] | None = None
     allow_relaxed_fallback: bool = True
 
@@ -124,46 +128,44 @@ class FormulationRecommender:
         score = float(np.clip((float(value) - lo) / max(hi - lo, 1e-9), 0.0, 1.0))
         return 1.0 - score if inverse else score
 
-    def _pair_is_allowed(
-        self, a: pd.Series, b: pd.Series, options: RecommendationOptions, relaxed: bool = False
+    def _components_allowed(
+        self, components: list[pd.Series], options: RecommendationOptions, relaxed: bool = False
     ) -> bool:
         if relaxed:
             return True
-        if options.exclude_high_hazard and max(a.hazard_prior, b.hazard_prior) >= 0.80:
+        if options.exclude_high_hazard and max(component.hazard_prior for component in components) >= 0.80:
             return False
-        if max(a.viscosity_mpas, b.viscosity_mpas) > options.max_mixture_viscosity * 4:
+        if max(component.viscosity_mpas for component in components) > options.max_mixture_viscosity * 4:
             return False
-        # Exclude two co-solvents that both have very low polarity; one component
+        # Exclude mixtures where all components are very low-polarity; one component
         # must carry most of the salt-solvation burden.
-        if max(a.dielectric_constant, b.dielectric_constant) < 12 and max(a.donor_number, b.donor_number) < 22:
+        if (
+            max(component.dielectric_constant for component in components) < 12
+            and max(component.donor_number for component in components) < 22
+        ):
             return False
         return True
 
     def _evaluate(
         self,
         salt: str,
-        a: pd.Series,
-        b: pd.Series,
-        fraction_a: float,
+        components: list[tuple[pd.Series, float]],
         options: RecommendationOptions,
         relaxed: bool = False,
     ) -> dict:
-        fraction_b = 1.0 - fraction_a
-        dielectric = fraction_a * a.dielectric_constant + fraction_b * b.dielectric_constant
-        donor = fraction_a * a.donor_number + fraction_b * b.donor_number
-        viscosity = exp(
-            fraction_a * log(max(a.viscosity_mpas, 0.05))
-            + fraction_b * log(max(b.viscosity_mpas, 0.05))
-        )
+        solvents = [component for component, _ in components]
+        fractions = [float(fraction) for _, fraction in components]
+        dielectric = sum(fraction * solvent.dielectric_constant for solvent, fraction in components)
+        donor = sum(fraction * solvent.donor_number for solvent, fraction in components)
+        viscosity = exp(sum(fraction * log(max(solvent.viscosity_mpas, 0.05)) for solvent, fraction in components))
         # Flash point of a volatile binary mixture is not linear. This
         # conservative proxy stays much closer to the more volatile component.
-        lower_flash = min(a.flash_point_c, b.flash_point_c)
-        flash_spread = abs(a.flash_point_c - b.flash_point_c)
-        volatile_fraction = fraction_a if a.flash_point_c == lower_flash else fraction_b
-        flash = lower_flash + flash_spread * max(0.0, 1.0 - volatile_fraction) * 0.18
-        tpsa_density = (
-            fraction_a * a.tpsa / a.molecular_weight
-            + fraction_b * b.tpsa / b.molecular_weight
+        lower_flash = min(solvent.flash_point_c for solvent in solvents)
+        weighted_flash = sum(fraction * solvent.flash_point_c for solvent, fraction in components)
+        flash = lower_flash + max(0.0, weighted_flash - lower_flash) * 0.18
+        tpsa_density = sum(
+            fraction * solvent.tpsa / solvent.molecular_weight
+            for solvent, fraction in components
         )
 
         dielectric_score = self._scale("dielectric_constant", dielectric)
@@ -173,14 +175,14 @@ class FormulationRecommender:
         # LiNO3 has high lattice energy and no direct CALiSol labels, so the
         # fallback emphasizes charge separation and Lewis-basic coordination.
         if salt == "LiNO3":
-            affinity = (
-                fraction_a * LINO3_AFFINITY.get(a["code"], 0.35)
-                + fraction_b * LINO3_AFFINITY.get(b["code"], 0.35)
+            affinity = sum(
+                fraction * LINO3_AFFINITY.get(solvent["code"], 0.35)
+                for solvent, fraction in components
             )
-            strong_solvator_fraction = (
-                fraction_a if LINO3_AFFINITY.get(a["code"], 0.35) >= 0.78 else 0.0
-            ) + (
-                fraction_b if LINO3_AFFINITY.get(b["code"], 0.35) >= 0.78 else 0.0
+            strong_solvator_fraction = sum(
+                fraction
+                for solvent, fraction in components
+                if LINO3_AFFINITY.get(solvent["code"], 0.35) >= 0.78
             )
             solubility = _sigmoid(
                 1.55 * dielectric_score
@@ -198,8 +200,8 @@ class FormulationRecommender:
 
         conductivity_score = transport_score
 
-        oxidation = fraction_a * a.oxidation_prior + fraction_b * b.oxidation_prior
-        reduction = fraction_a * a.reduction_prior + fraction_b * b.reduction_prior
+        oxidation = sum(fraction * solvent.oxidation_prior for solvent, fraction in components)
+        reduction = sum(fraction * solvent.reduction_prior for solvent, fraction in components)
         if options.application == "high_voltage":
             stability = 0.75 * oxidation + 0.25 * reduction
         elif options.application == "lithium_metal":
@@ -208,12 +210,12 @@ class FormulationRecommender:
             stability = 0.50 * oxidation + 0.50 * reduction
 
         volatility_penalty = self._scale(
-            "boiling_point_c", min(a.boiling_point_c, b.boiling_point_c), inverse=True
+            "boiling_point_c", min(solvent.boiling_point_c for solvent in solvents), inverse=True
         )
         low_temp = 0.65 * self._scale("viscosity_mpas", viscosity, inverse=True) + 0.35 * volatility_penalty
         safety = (
             0.55 * self._scale("flash_point_c", flash)
-            + 0.45 * (1.0 - (fraction_a * a.hazard_prior + fraction_b * b.hazard_prior))
+            + 0.45 * (1.0 - sum(fraction * solvent.hazard_prior for solvent, fraction in components))
         )
         violations = []
         constraint_penalty = 0.0
@@ -225,7 +227,7 @@ class FormulationRecommender:
             excess = viscosity - options.max_mixture_viscosity
             violations.append(f"估算黏度高于要求 {excess:.2f} mPa·s")
             constraint_penalty += min(0.25, 0.04 + excess / 40.0)
-        if options.exclude_high_hazard and max(a.hazard_prior, b.hazard_prior) >= 0.80:
+        if options.exclude_high_hazard and max(solvent.hazard_prior for solvent in solvents) >= 0.80:
             violations.append("包含高危溶剂先验")
             constraint_penalty += 0.18
         if violations and not relaxed:
@@ -234,7 +236,7 @@ class FormulationRecommender:
         # High-melting solvents are useful in blends, but dominant fractions
         # near or below their melting point are poor room-temperature starts.
         phase_penalty = 0.0
-        for solvent, fraction in ((a, fraction_a), (b, fraction_b)):
+        for solvent, fraction in components:
             if options.temperature_c < solvent.melting_point_c + 3:
                 phase_penalty += max(0.0, fraction - 0.35) * 0.55
 
@@ -258,13 +260,14 @@ class FormulationRecommender:
 
         # Avoid nominally "optimal" 50/50 results caused only by smooth linear
         # mixing: reward complementary roles, but only modestly.
-        complementary = abs(a.dielectric_constant - b.dielectric_constant) / 90.0
+        complementary = float(np.std([solvent.dielectric_constant for solvent in solvents]) / 45.0)
         total += min(0.035, 0.035 * complementary)
 
-        catalog_coverage = int(a.training_code in self.model.supported_solvents) + int(
-            b.training_code in self.model.supported_solvents
+        catalog_coverage = sum(
+            int(solvent.training_code in self.model.supported_solvents)
+            for solvent in solvents
         )
-        confidence = 0.42 + 0.06 * catalog_coverage
+        confidence = 0.42 + 0.12 * (catalog_coverage / max(len(solvents), 1))
         basis = "分子描述符 + 溶剂化/传输启发式（外推）"
         if violations:
             confidence *= max(0.35, 1.0 - constraint_penalty * 1.8)
@@ -282,7 +285,25 @@ class FormulationRecommender:
         if flash >= 50:
             reasons.append("估算闪点较高，挥发/易燃风险相对较低")
 
+        component_payload = [
+            {
+                "code": solvent["code"],
+                "name": solvent["name"],
+                "ratio": round(100 * fraction),
+                "pubchem_url": solvent.pubchem_url,
+            }
+            for solvent, fraction in components
+        ]
+        a = solvents[0]
+        b = solvents[1]
+        fraction_a = fractions[0]
+        fraction_b = fractions[1]
+        is_binary = len(components) == 2
+
         return {
+            "components": component_payload,
+            "component_count": len(components),
+            "formula_key": "|".join(sorted(component["code"] for component in component_payload)),
             "solvent_a": a["code"],
             "solvent_a_name": a["name"],
             "solvent_b": b["code"],
@@ -310,16 +331,14 @@ class FormulationRecommender:
             "reasons": reasons[:3],
             "constraint_status": "relaxed" if violations else "feasible",
             "constraint_violations": violations,
-            "sources": [url for url in (a.pubchem_url, b.pubchem_url) if url],
+            "sources": [component["pubchem_url"] for component in component_payload if component["pubchem_url"]],
             "_transport_score": transport_score,
             "_heuristic_solubility_score": solubility,
             "_solubility_weight": weights["solubility"] / weight_sum,
             "_conductivity_weight": weights["conductivity"] / weight_sum,
             "_constraint_penalty": constraint_penalty,
             "_lino3_input": {
-                "a": a,
-                "b": b,
-                "fraction_a": fraction_a,
+                "components": components,
                 "temperature_c": options.temperature_c,
                 "heuristic_score": solubility,
             },
@@ -332,7 +351,7 @@ class FormulationRecommender:
                 "concentration": options.concentration,
                 "concentration_unit": options.concentration_unit,
                 "ratio_type": "v",
-            },
+            } if is_binary else None,
         }
 
     def _generate_candidates(
@@ -340,12 +359,38 @@ class FormulationRecommender:
     ) -> list[dict]:
         candidates = []
         for (_, a), (_, b) in combinations(self.catalog.iterrows(), 2):
-            if not self._pair_is_allowed(a, b, options, relaxed=relaxed):
+            if not self._components_allowed([a, b], options, relaxed=relaxed):
                 continue
             for ratio in np.arange(0.10, 0.91, 0.05):
-                result = self._evaluate(salt, a, b, float(ratio), options, relaxed=relaxed)
+                result = self._evaluate(
+                    salt,
+                    [(a, float(ratio)), (b, float(1.0 - ratio))],
+                    options,
+                    relaxed=relaxed,
+                )
                 if result:
                     candidates.append(result)
+        if options.max_components >= 3:
+            ternary_templates = {
+                (0.50, 0.35, 0.15),
+                (0.45, 0.35, 0.20),
+                (0.40, 0.40, 0.20),
+                (0.60, 0.25, 0.15),
+            }
+            for (_, a), (_, b), (_, c) in combinations(self.catalog.iterrows(), 3):
+                solvents = [a, b, c]
+                if not self._components_allowed(solvents, options, relaxed=relaxed):
+                    continue
+                for ratios in ternary_templates:
+                    for ordered in set(permutations(ratios)):
+                        result = self._evaluate(
+                            salt,
+                            list(zip(solvents, ordered)),
+                            options,
+                            relaxed=relaxed,
+                        )
+                        if result:
+                            candidates.append(result)
         return candidates
 
     @staticmethod
@@ -429,7 +474,8 @@ class FormulationRecommender:
             covered = [
                 item
                 for item in candidates
-                if item["_ml_input"]["solvent_a"] in self.model.supported_solvents
+                if item["_ml_input"]
+                and item["_ml_input"]["solvent_a"] in self.model.supported_solvents
                 and item["_ml_input"]["solvent_b"] in self.model.supported_solvents
             ]
             predictions = self.model.predict_many([item["_ml_input"] for item in covered])
@@ -446,11 +492,24 @@ class FormulationRecommender:
                 item["basis"] = "CALiSol-23 电导率模型 + 物理约束"
 
         candidates.sort(key=lambda item: item["score"], reverse=True)
-        selected = self._select_diverse(candidates, options.top_k)
-        selected.sort(
-            key=lambda item: (item["score"], item["confidence"]),
-            reverse=True,
-        )
+        if options.return_all_above_threshold:
+            threshold = float(options.score_threshold)
+            best_per_formula = {}
+            for item in candidates:
+                if item["score"] < threshold:
+                    continue
+                best_per_formula.setdefault(item["formula_key"], item)
+            selected = sorted(
+                best_per_formula.values(),
+                key=lambda item: (item["score"], item["confidence"]),
+                reverse=True,
+            )[: options.max_results]
+        else:
+            selected = self._select_diverse(candidates, options.top_k)
+            selected.sort(
+                key=lambda item: (item["score"], item["confidence"]),
+                reverse=True,
+            )
 
         for item in selected:
             for key in (
@@ -461,6 +520,7 @@ class FormulationRecommender:
                 "_constraint_penalty",
                 "_lino3_input",
                 "_ml_input",
+                "formula_key",
             ):
                 item.pop(key, None)
 
@@ -497,6 +557,10 @@ class FormulationRecommender:
             "search_space": {
                 "solvents": len(self.catalog),
                 "ratios_per_pair": 17,
+                "max_components": options.max_components,
+                "score_threshold": options.score_threshold,
+                "returned_formulations": len(selected),
+                "return_all_above_threshold": options.return_all_above_threshold,
                 "evaluated_formulations": len(candidates),
                 "feasible_formulations": feasible_count,
                 "used_relaxed_fallback": used_relaxed_fallback,

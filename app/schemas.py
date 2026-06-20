@@ -21,5 +21,9 @@ class RecommendationRequest(BaseModel):
     exclude_high_hazard: bool = True
     application: str = Field("lithium_metal", pattern="^(lithium_metal|high_voltage|balanced)$")
     top_k: int = Field(10, ge=1, le=30)
+    score_threshold: float = Field(0.0, ge=0, le=100)
+    max_results: int = Field(80, ge=1, le=200)
+    max_components: int = Field(2, ge=2, le=3)
+    return_all_above_threshold: bool = False
     allow_relaxed_fallback: bool = True
     weights: WeightInput = WeightInput()

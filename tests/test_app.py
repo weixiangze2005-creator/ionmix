@@ -121,3 +121,24 @@ def test_impossible_constraints_return_relaxed_low_confidence_options():
     assert data["search_space"]["used_relaxed_fallback"] is True
     assert all(row["constraint_status"] == "relaxed" for row in data["recommendations"])
     assert all(row["constraint_violations"] for row in data["recommendations"])
+
+
+def test_threshold_mode_can_return_ternary_candidates():
+    response = client.post(
+        "/api/recommend",
+        json={
+            "salt": "LiNO3",
+            "max_components": 3,
+            "return_all_above_threshold": True,
+            "score_threshold": 62,
+            "max_results": 20,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    rows = data["recommendations"]
+    assert len(rows) > 10
+    assert len(rows) <= 20
+    assert all(row["score"] >= 62 for row in rows)
+    assert any(row["component_count"] == 3 for row in rows)
+    assert all(sum(component["ratio"] for component in row["components"]) == 100 for row in rows)
