@@ -8,14 +8,42 @@
 </head>
 <body>
   <header class="hero">
+    <div class="hero-noise" aria-hidden="true"></div>
     <nav>
       <div class="brand"><span class="brand-mark">E</span> Electrolyte Explorer</div>
       <div class="model-pill" id="model-pill">模型状态检查中</div>
     </nav>
-    <div class="hero-copy">
-      <div class="eyebrow">MOLECULE → MIXTURE → EXPERIMENT</div>
-      <h1>从目标性质出发，<br><em>反向筛选</em>电解液配方</h1>
-      <p>输入锂盐、温度与研发侧重点，系统搜索二元/三元溶剂组合和起始配比，并展示推荐依据、模型覆盖范围与不确定性。</p>
+    <div class="hero-layout">
+      <div class="hero-copy">
+        <div class="eyebrow">MOLECULE → MIXTURE → EXPERIMENT</div>
+        <h1>从目标性质出发，<br><em>反向筛选</em>电解液配方</h1>
+        <p>输入锂盐、温度与研发侧重点，系统搜索二元/三元溶剂组合和起始配比，并展示推荐依据、模型覆盖范围与不确定性。</p>
+        <div class="hero-actions">
+          <a href="#screening" class="hero-button">开始配方筛选</a>
+          <span>LiNO₃ · LiPF₆ · LiTFSI · 三元溶剂搜索</span>
+        </div>
+      </div>
+
+      <div class="hero-visual" aria-hidden="true">
+        <div class="molecule-stage">
+          <div class="molecule-glow"></div>
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="orbit orbit-three"></div>
+          <div class="molecule molecule-main">
+            <span class="atom atom-core">Li</span>
+            <span class="atom atom-a">O</span>
+            <span class="atom atom-b">N</span>
+            <span class="atom atom-c">S</span>
+            <span class="bond bond-a"></span>
+            <span class="bond bond-b"></span>
+            <span class="bond bond-c"></span>
+          </div>
+          <div class="floating-chip chip-one">solvation ↑</div>
+          <div class="floating-chip chip-two">viscosity ↓</div>
+          <div class="floating-chip chip-three">score 70.7</div>
+        </div>
+      </div>
     </div>
     <div class="pipeline">
       <span>公开数据</span><i></i><span>RDKit 表征</span><i></i><span>性质预测</span><i></i><span>配比优化</span>
@@ -23,7 +51,7 @@
   </header>
 
   <main>
-    <section class="workspace">
+    <section class="workspace" id="screening">
       <aside class="panel controls">
         <div class="section-number">01 / DEFINE</div>
         <h2>定义筛选任务</h2>

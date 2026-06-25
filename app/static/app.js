@@ -285,3 +285,14 @@ document.querySelector("#next-page").addEventListener("click", () => {
   renderPage();
 });
 loadModelInfo();
+
+const moleculeStage = document.querySelector(".molecule-stage");
+if (moleculeStage) {
+  document.querySelector(".hero").addEventListener("pointermove", event => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width - 0.5;
+    const y = (event.clientY - rect.top) / rect.height - 0.5;
+    moleculeStage.style.setProperty("--tilt-x", `${x * 8}deg`);
+    moleculeStage.style.setProperty("--tilt-y", `${-y * 5}deg`);
+  });
+}
