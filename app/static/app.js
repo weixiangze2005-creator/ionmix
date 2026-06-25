@@ -100,9 +100,18 @@ async function loadModelInfo() {
     const info = await response.json();
     const pill = document.querySelector("#model-pill");
     const lino3Rows = info.lino3_solubility_model?.metrics?.rows || 0;
-    pill.textContent = info.available
-      ? `模型在线 · 电导率 ${info.metrics.train_rows.toLocaleString()} 条 · LiNO₃ 溶解度 ${lino3Rows} 条`
-      : "启发式模式 · 模型尚未训练";
+    const mixture = info.mixture_property_model;
+    const mixtureRows = mixture?.metrics?.training_summary?.rows || 0;
+    const lino3BinaryRows = mixture?.metrics?.solubility?.lino3_binary_rows || 0;
+    if (mixture?.available) {
+      pill.textContent = `配方模型在线 · 公开实验 ${mixtureRows.toLocaleString()} 条 · LiNO₃ 二元 ${lino3BinaryRows} 条`;
+    } else if (info.available) {
+      pill.textContent = `模型在线 · 电导率 ${info.metrics.train_rows.toLocaleString()} 条 · LiNO₃ 溶解度 ${lino3Rows} 条`;
+    } else if (lino3Rows > 0) {
+      pill.textContent = `轻量模型在线 · LiNO₃ 溶解度 ${lino3Rows} 条`;
+    } else {
+      pill.textContent = "启发式模式 · 模型尚未训练";
+    }
   } catch {
     document.querySelector("#model-pill").textContent = "服务连接异常";
   }
