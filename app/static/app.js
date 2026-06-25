@@ -285,14 +285,3 @@ document.querySelector("#next-page").addEventListener("click", () => {
   renderPage();
 });
 loadModelInfo();
-
-const fieldVisual = document.querySelector(".field-visual");
-if (fieldVisual) {
-  document.querySelector(".hero").addEventListener("pointermove", event => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = (event.clientX - rect.left) / rect.width - 0.5;
-    const y = (event.clientY - rect.top) / rect.height - 0.5;
-    fieldVisual.style.setProperty("--tilt-x", `${x * 4}deg`);
-    fieldVisual.style.setProperty("--tilt-y", `${-y * 3}deg`);
-  });
-}

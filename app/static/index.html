@@ -13,28 +13,10 @@
       <div class="brand"><span class="brand-mark">E</span> Electrolyte Explorer</div>
       <div class="model-pill" id="model-pill">模型状态检查中</div>
     </nav>
-    <div class="hero-layout">
-      <div class="hero-copy">
-        <div class="eyebrow">MOLECULE → MIXTURE → EXPERIMENT</div>
-        <h1>从目标性质出发，<br><em>反向筛选</em>电解液配方</h1>
-        <p>输入锂盐、温度与研发侧重点，系统搜索二元/三元溶剂组合和起始配比，并展示推荐依据、模型覆盖范围与不确定性。</p>
-        <div class="hero-meta">LiNO₃ · LiPF₆ · LiTFSI · 二元/三元溶剂搜索 · 约束排序</div>
-      </div>
-
-      <div class="hero-visual" aria-hidden="true">
-        <div class="field-visual">
-          <div class="field-orbit field-orbit-a"></div>
-          <div class="field-orbit field-orbit-b"></div>
-          <div class="field-orbit field-orbit-c"></div>
-          <div class="field-node node-core">Li⁺</div>
-          <span class="field-dot dot-a"></span>
-          <span class="field-dot dot-b"></span>
-          <span class="field-dot dot-c"></span>
-          <span class="field-dot dot-d"></span>
-          <div class="field-readout readout-a"><b>solubility</b><span>0.93</span></div>
-          <div class="field-readout readout-b"><b>viscosity</b><span>1.98</span></div>
-        </div>
-      </div>
+    <div class="hero-copy">
+      <div class="eyebrow">MOLECULE → MIXTURE → EXPERIMENT</div>
+      <h1>从目标性质出发，<br><em>反向筛选</em>电解液配方</h1>
+      <p>输入锂盐、温度与研发侧重点，系统搜索二元/三元溶剂组合和起始配比，并展示推荐依据、模型覆盖范围与不确定性。</p>
     </div>
     <div class="pipeline">
       <span>公开数据</span><i></i><span>RDKit 表征</span><i></i><span>性质预测</span><i></i><span>配比优化</span>
@@ -150,9 +132,23 @@
     </section>
   </main>
 
-  <footer>
-    <span>Data: CALiSol-23 · PubChem PUG REST</span>
-    <span>Cheminformatics: RDKit</span>
+  <footer class="site-footer">
+    <div>
+      <span class="footer-kicker">IONMIX</span>
+      <h2>把候选配方变成下一轮实验清单。</h2>
+    </div>
+    <div class="footer-card">
+      <b>Data</b>
+      <span>CALiSol-23 · PubChem · LiNO₃ solubility</span>
+    </div>
+    <div class="footer-card">
+      <b>Cheminformatics</b>
+      <span>RDKit descriptors · physical constraints</span>
+    </div>
+    <div class="footer-card">
+      <b>Boundary</b>
+      <span>预筛选工具，不替代实验验证</span>
+    </div>
   </footer>
   <script src="/static/app.js"></script>
 </body>
