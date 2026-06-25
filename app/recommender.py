@@ -10,6 +10,7 @@ import pandas as pd
 from app.catalog import load_catalog
 from app.lino3_model import LiNO3SolubilityModel
 from app.ml_model import ConductivityModel
+from app.mixture_model import MixturePropertyModel
 
 
 SALT_ALIASES = {
@@ -109,6 +110,7 @@ class FormulationRecommender:
         self.catalog = load_catalog()
         self.model = ConductivityModel()
         self.lino3_model = LiNO3SolubilityModel()
+        self.mixture_model = MixturePropertyModel()
         self.scales = {
             column: (
                 float(self.catalog[column].quantile(0.05)),
@@ -352,6 +354,17 @@ class FormulationRecommender:
                 "concentration_unit": options.concentration_unit,
                 "ratio_type": "v",
             } if is_binary else None,
+            "_mixture_input": {
+                "salt": salt,
+                "temperature_c": options.temperature_c,
+                "concentration": options.concentration,
+                "concentration_unit": options.concentration_unit,
+                "solvent_ratio_basis": "v",
+                "components": [
+                    (solvent["code"], fraction)
+                    for solvent, fraction in components
+                ],
+            },
         }
 
     def _generate_candidates(
@@ -491,6 +504,37 @@ class FormulationRecommender:
                 item["confidence"] = round(confidence, 1)
                 item["basis"] = "CALiSol-23 电导率模型 + 物理约束"
 
+        if self.mixture_model.available:
+            mixture_predictions = self.mixture_model.predict_many(
+                [item["_mixture_input"] for item in candidates]
+            )
+            for item, prediction in zip(candidates, mixture_predictions):
+                if prediction["solubility_score"] is not None:
+                    old_score = item["properties"]["solubility_score"] / 100.0
+                    new_score = float(prediction["solubility_score"])
+                    score_delta = item["_solubility_weight"] * (new_score - old_score) * 100
+                    item["score"] = round(float(np.clip(item["score"] + score_delta, 0.0, 100.0)), 1)
+                    item["properties"]["solubility_score"] = round(new_score * 100, 1)
+                    item["predicted_solubility_mole_fraction"] = round(
+                        float(prediction["solubility_mole_fraction"]), 6
+                    )
+                if prediction["conductivity_score"] is not None:
+                    old_score = item["properties"]["conductivity_score"] / 100.0
+                    new_score = float(prediction["conductivity_score"])
+                    score_delta = item["_conductivity_weight"] * (new_score - old_score) * 100
+                    item["score"] = round(float(np.clip(item["score"] + score_delta, 0.0, 100.0)), 1)
+                    item["properties"]["conductivity_score"] = round(new_score * 100, 1)
+                    item["predicted_conductivity"] = round(
+                        float(prediction["conductivity"]), 3
+                    )
+                if prediction["used_targets"]:
+                    confidence = float(prediction["confidence"])
+                    if item["_constraint_penalty"] > 0:
+                        confidence *= max(0.35, 1.0 - item["_constraint_penalty"] * 1.8)
+                    item["confidence"] = round(float(max(item["confidence"], confidence)), 1)
+                    item["confidence_factors"].update(prediction["confidence_factors"])
+                    item["basis"] = item["basis"] + " + 配方级公开实验模型"
+
         candidates.sort(key=lambda item: item["score"], reverse=True)
         if options.return_all_above_threshold:
             threshold = float(options.score_threshold)
@@ -520,11 +564,17 @@ class FormulationRecommender:
                 "_constraint_penalty",
                 "_lino3_input",
                 "_ml_input",
+                "_mixture_input",
                 "formula_key",
             ):
                 item.pop(key, None)
 
         has_lino3_training = salt == "LiNO3" and self.lino3_model.available
+        mixture_metrics = self.mixture_model.metrics if self.mixture_model.available else {}
+        has_binary_mixture_labels = bool(
+            salt == "LiNO3"
+            and mixture_metrics.get("solubility", {}).get("lino3_binary_rows", 0) > 0
+        )
         # LiNO3 now has direct pure-solvent labels, but the requested binary
         # mixtures and conductivity remain outside the labelled training domain.
         is_extrapolation = salt not in self.model.supported_salts
@@ -538,7 +588,8 @@ class FormulationRecommender:
             "training_coverage": {
                 "conductivity_labels": salt in self.model.supported_salts,
                 "solubility_labels": has_lino3_training,
-                "binary_mixture_labels": False if salt == "LiNO3" else None,
+                "binary_mixture_labels": has_binary_mixture_labels if salt == "LiNO3" else None,
+                "mixture_model": self.mixture_model.available,
             },
             "warning": (
                 "LiNO₃ 已纳入实测溶解度训练集，但当前主要标签来自纯溶剂；二元配比仍属于模型插值/外推，且没有 LiNO₃ 电导率训练标签。"

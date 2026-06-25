@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.catalog import load_catalog
 from app.ml_model import ConductivityModel
 from app.lino3_model import LiNO3SolubilityModel
+from app.mixture_model import MixturePropertyModel
 from app.recommender import FormulationRecommender, RecommendationOptions
 from app.schemas import RecommendationRequest
 
@@ -50,6 +51,7 @@ def solvents():
 def model_info():
     model = ConductivityModel()
     lino3_model = LiNO3SolubilityModel()
+    mixture_model = MixturePropertyModel()
     return {
         "available": model.available,
         "metrics": model.metrics,
@@ -61,6 +63,11 @@ def model_info():
             "available": lino3_model.available,
             "metrics": lino3_model.metrics,
             "source_doi": "10.1016/j.fluid.2017.12.034",
+        },
+        "mixture_property_model": {
+            "available": mixture_model.available,
+            "metrics": mixture_model.metrics,
+            "source_csv": "data/mixture_experiments.csv",
         },
     }
 

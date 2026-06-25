@@ -1,0 +1,36 @@
+{
+  "rows": 13328,
+  "source_counts": {
+    "CALiSol-23": 13108,
+    "NIST ThermoML": 220
+  },
+  "target_counts": {
+    "conductivity": 13108,
+    "solubility": 220
+  },
+  "salt_counts": {
+    "LiPF6": 4239,
+    "LiBOB": 3699,
+    "LiBF4": 2951,
+    "LiAsF6": 1288,
+    "LiBPFPB": 318,
+    "LiTFSI": 258,
+    "LiClO4": 160,
+    "LiCF3SO3": 145,
+    "LiCl": 70,
+    "LiBr": 55,
+    "LiNO3": 40,
+    "LiBMB": 40,
+    "LiF": 20,
+    "LiFSI": 19,
+    "LiTDI": 13,
+    "LiPDI": 13
+  },
+  "component_counts": {
+    "1": 2461,
+    "2": 10134,
+    "3": 733
+  },
+  "thermoml_url": "https://trc.nist.gov/ThermoML/10.1016/j.fluid.2017.12.034.json",
+  "thermoml_doi": "10.1016/j.fluid.2017.12.034"
+}

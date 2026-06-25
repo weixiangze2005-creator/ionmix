@@ -1,0 +1,43 @@
+{
+  "conductivity": {
+    "mae": 0.99578,
+    "r2": 0.7951,
+    "validation_rows": 3332,
+    "validation_split": "group_shuffle_by_source",
+    "available": true,
+    "rows": 12588,
+    "target": "conductivity",
+    "target_transform": "log1p",
+    "unique_salts": 12,
+    "unique_formulas": 134
+  },
+  "solubility": {
+    "mae": 0.02853,
+    "r2": 0.5951,
+    "validation_rows": 55,
+    "validation_split": "group_shuffle_by_source",
+    "available": true,
+    "rows": 220,
+    "target": "solubility_mole_fraction",
+    "target_transform": "log10",
+    "unique_salts": 6,
+    "unique_formulas": 32,
+    "lino3_binary_rows": 15
+  },
+  "training_summary": {
+    "rows": 13328,
+    "source_counts": {
+      "CALiSol-23": 13108,
+      "NIST ThermoML": 220
+    },
+    "target_counts": {
+      "conductivity": 13108,
+      "solubility": 220
+    },
+    "component_counts": {
+      "1": 2461,
+      "2": 10134,
+      "3": 733
+    }
+  }
+}

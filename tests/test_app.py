@@ -19,6 +19,9 @@ def test_health_and_model():
     assert "LiPF6" in info["supported_salts"]
     assert info["lino3_solubility_model"]["available"] is True
     assert info["lino3_solubility_model"]["metrics"]["rows"] == 25
+    assert info["mixture_property_model"]["available"] is True
+    assert info["mixture_property_model"]["metrics"]["training_summary"]["rows"] > 10000
+    assert info["mixture_property_model"]["metrics"]["solubility"]["lino3_binary_rows"] == 15
 
 
 def test_weight_ui_explains_and_starts_at_one_hundred_percent():
@@ -52,6 +55,8 @@ def test_lino3_extrapolation_recommendations():
     assert data["is_extrapolation"] is True
     assert data["training_coverage"]["solubility_labels"] is True
     assert data["training_coverage"]["conductivity_labels"] is False
+    assert data["training_coverage"]["binary_mixture_labels"] is True
+    assert data["training_coverage"]["mixture_model"] is True
     assert len(data["recommendations"]) == 10
     solvent_codes = {
         code
