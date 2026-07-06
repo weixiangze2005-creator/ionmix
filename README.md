@@ -108,5 +108,8 @@ docs/                技术原理和限制说明
 
 - [CALiSol-23](https://github.com/Pele0599/CALiSol-23)：锂盐电解液电导率数据。
 - [Xin et al., Fluid Phase Equilibria 2018](https://doi.org/10.1016/j.fluid.2017.12.034)：LiNO3 等锂盐在非水溶剂中的实测溶解度。
+- [OEDB: Open Electrolyte Database for Batteries](https://oedb.jp/)：已同步 v2026-05-11 的 5,616 条 MD 计算性质数据和 1,560 条 Raman 实验索引；计算数据用于扩展黏度、密度、扩散系数和配位数等非电导率性质空间，不与实测标签混称。
 - [PubChem PUG REST](https://pubchem.ncbi.nlm.nih.gov/docs/pug-rest)：化合物身份、CID、标准结构和基础分子属性。
 - [RDKit](https://www.rdkit.org/docs/GettingStartedInPython.html)：SMILES 标准化与分子描述符计算。
+
+更完整的来源、期刊和条数说明见 [docs/数据来源说明.md](docs/数据来源说明.md)。
