@@ -25,6 +25,12 @@ SALT_TO_IONS = {
     "LiClO4": ("Li", "ClO4"),
 }
 
+OEDB_PROPERTY_CODE_MAP = {
+    # OEDB solvent code MA is methyl acetoacetate. The app keeps MA as
+    # methyl acetate and uses MAA for methyl acetoacetate.
+    "MA": "MAA",
+}
+
 LOG_AVERAGE_TARGETS = {
     "viscosity_mpas",
     "cation_diffusivity_m2_s",
@@ -82,7 +88,7 @@ class OEDBAuxiliaryModel:
         return [] if not self.bundle else list(self.bundle["solvents"])
 
     def _feature_row(self, cation: str, anion: str, solvent: str, concentration: float) -> dict[str, float]:
-        props = solvent_properties(solvent)
+        props = solvent_properties(OEDB_PROPERTY_CODE_MAP.get(solvent, solvent))
         row = {
             "concentration_mol_kg": float(concentration),
             "molecular_weight": float(props.get("molecular_weight", 0.0)),

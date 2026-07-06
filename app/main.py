@@ -54,6 +54,7 @@ def model_info():
     lino3_model = LiNO3SolubilityModel()
     mixture_model = MixturePropertyModel()
     oedb_model = OEDBAuxiliaryModel()
+    catalog = load_catalog()
     return {
         "available": model.available,
         "metrics": model.metrics,
@@ -61,6 +62,10 @@ def model_info():
         "supported_solvents": model.supported_solvents,
         "training_dataset": "CALiSol-23",
         "dataset_url": "https://github.com/Pele0599/CALiSol-23",
+        "solvent_catalog": {
+            "count": int(len(catalog)),
+            "oedb_overlap_count": int(catalog["oedb_code"].astype(str).str.len().gt(0).sum()),
+        },
         "lino3_solubility_model": {
             "available": lino3_model.available,
             "metrics": lino3_model.metrics,

@@ -25,3 +25,17 @@ TEP,Triethyl phosphate,磷酸三乙酯,CCOP(=O)(OCC)OCC,13.0,1.60,215,115,23.0,2
 TMP,Trimethyl phosphate,磷酸三甲酯,COP(=O)(OC)OC,21.0,1.75,197,107,23.0,2,flame-retarding
 BTFE,"Bis(2,2,2-trifluoroethyl) ether","双(2,2,2-三氟乙基)醚",O(CC(F)(F)F)CC(F)(F)F,6.0,0.80,94,5,8.0,3,fluorinated-diluent
 TTE,"1,1,2,2-Tetrafluoroethyl 2,2,2-trifluoroethyl ether",氟醚稀释剂,FC(F)C(F)(F)OCC(F)(F)F,6.0,1.10,92,5,5.0,3,localized-high-concentration-diluent
+Ac,Acetone,propanone,CC(=O)C,20.7,0.32,56,-20,17.0,1,low-viscosity-polar
+Ac2O,Acetic anhydride,ethanoic anhydride,CC(=O)OC(=O)C,20.7,0.91,140,49,10.0,2,reactive-ester
+BC,"2,3-Butylene carbonate",butylene carbonate,CC1C(OC(=O)O1)C,50.0,3.00,240,130,15.0,3,high-permittivity
+DMI,"1,3-Dimethyl-2-imidazolidinone",DMI,CN1CCN(C1=O)C,37.6,1.90,225,120,29.0,2,strong-donor
+EB,Ethyl butyrate,ethyl butanoate,CCCC(=O)OCC,5.0,0.63,121,24,16.0,1,low-viscosity-ester
+EP,Ethyl propionate,ethyl propanoate,CCC(=O)OCC,5.8,0.47,99,12,16.0,1,low-viscosity-ester
+FAN,Fluoroacetonitrile,fluoromethyl cyanide,C(C#N)F,37.0,0.50,82,5,14.0,3,fluorinated-nitrile
+FEA,Fluoroethyl acetate,2-fluoroethyl acetate,CC(=O)OCCF,8.0,0.60,117,20,15.0,3,fluorinated-ester
+FEMC,Fluoroethyl methyl carbonate,fluorinated methyl carbonate,COC(=O)OCC(F)(F)F,8.0,0.90,120,30,10.0,3,fluorinated-carbonate
+GN,Glutaronitrile,pentanedinitrile,C(CC#N)CC#N,38.0,4.80,286,113,15.0,2,nitrile-solvating
+MAA,Methyl acetoacetate,methyl 3-oxobutanoate,CC(=O)CC(=O)OC,15.0,1.10,169,70,16.0,2,keto-ester
+MB,Methyl butyrate,methyl butanoate,CCCC(=O)OC,5.6,0.55,102,12,16.0,1,low-viscosity-ester
+MP,Methyl pyruvate,methyl 2-oxopropanoate,CC(=O)C(=O)OC,10.0,1.10,135,53,16.0,2,keto-ester
+SN,Succinonitrile,butanedinitrile,C(CC#N)C#N,55.0,3.00,265,110,15.0,2,solid-plasticizer

@@ -150,6 +150,44 @@ class FormulationRecommender:
             return False
         return True
 
+    @staticmethod
+    def _oedb_solvent_code(solvent: pd.Series) -> str:
+        code = solvent.get("oedb_code", solvent["code"])
+        if pd.isna(code) or not str(code).strip():
+            return f"UNSUPPORTED_{solvent['code']}"
+        return str(code)
+
+    def _ternary_catalog(self, options: RecommendationOptions) -> pd.DataFrame:
+        """Cap ternary search after a goal-aware solvent prefilter."""
+        pool_limit = 18
+        if len(self.catalog) <= pool_limit:
+            return self.catalog
+
+        weights = options.weights or DEFAULT_WEIGHTS
+        weight_sum = max(sum(weights.values()), 1e-12)
+        values = self.catalog.copy()
+        dielectric = values["dielectric_constant"].apply(lambda value: self._scale("dielectric_constant", value))
+        donor = values["donor_number"].apply(lambda value: self._scale("donor_number", value))
+        low_viscosity = values["viscosity_mpas"].apply(lambda value: self._scale("viscosity_mpas", value, inverse=True))
+        high_flash = values["flash_point_c"].apply(lambda value: self._scale("flash_point_c", value))
+        low_hazard = 1.0 - pd.to_numeric(values["hazard_prior"], errors="coerce").fillna(0.45)
+        stability = (
+            pd.to_numeric(values["oxidation_prior"], errors="coerce").fillna(0.60)
+            + pd.to_numeric(values["reduction_prior"], errors="coerce").fillna(0.55)
+        ) / 2.0
+        low_temp = (
+            low_viscosity
+            + np.clip((25.0 - pd.to_numeric(values["melting_point_c"], errors="coerce").fillna(-20.0)) / 120.0, 0.0, 1.0)
+        ) / 2.0
+        values["_ternary_prefilter_score"] = (
+            weights.get("solubility", 0.0) / weight_sum * (0.55 * dielectric + 0.45 * donor)
+            + weights.get("conductivity", 0.0) / weight_sum * low_viscosity
+            + weights.get("stability", 0.0) / weight_sum * stability
+            + weights.get("safety", 0.0) / weight_sum * (0.65 * low_hazard + 0.35 * high_flash)
+            + weights.get("low_temperature", 0.0) / weight_sum * low_temp
+        )
+        return values.sort_values("_ternary_prefilter_score", ascending=False).head(pool_limit)
+
     def _evaluate(
         self,
         salt: str,
@@ -371,7 +409,7 @@ class FormulationRecommender:
                 "salt": salt,
                 "concentration": options.concentration,
                 "components": [
-                    (solvent["code"], fraction)
+                    (self._oedb_solvent_code(solvent), fraction)
                     for solvent, fraction in components
                 ],
             },
@@ -400,7 +438,7 @@ class FormulationRecommender:
                 (0.40, 0.40, 0.20),
                 (0.60, 0.25, 0.15),
             }
-            for (_, a), (_, b), (_, c) in combinations(self.catalog.iterrows(), 3):
+            for (_, a), (_, b), (_, c) in combinations(self._ternary_catalog(options).iterrows(), 3):
                 solvents = [a, b, c]
                 if not self._components_allowed(solvents, options, relaxed=relaxed):
                     continue
@@ -546,10 +584,17 @@ class FormulationRecommender:
                     item["basis"] = item["basis"] + " + 配方级公开实验模型"
 
         if self.oedb_model.available:
-            oedb_predictions = self.oedb_model.predict_many(
-                [item["_oedb_input"] for item in candidates]
+            oedb_pool_size = (
+                max(1600, options.max_results * 50)
+                if options.return_all_above_threshold
+                else max(1200, options.top_k * 150)
             )
-            for item, prediction in zip(candidates, oedb_predictions):
+            oedb_pool_size = min(len(candidates), oedb_pool_size)
+            oedb_pool = sorted(candidates, key=lambda item: item["score"], reverse=True)[:oedb_pool_size]
+            oedb_predictions = self.oedb_model.predict_many(
+                [item["_oedb_input"] for item in oedb_pool]
+            )
+            for item, prediction in zip(oedb_pool, oedb_predictions):
                 if not prediction.get("available"):
                     continue
                 properties = item["properties"]
@@ -650,6 +695,12 @@ class FormulationRecommender:
         # LiNO3 now has direct pure-solvent labels, but the requested binary
         # mixtures and conductivity remain outside the labelled training domain.
         is_extrapolation = salt not in self.model.supported_salts
+        oedb_supported = self.oedb_model.available and salt in self.oedb_model.supported_salts
+        oedb_warning = ""
+        if self.oedb_model.available and not oedb_supported:
+            oedb_warning = " OEDB-MD 当前不覆盖这个盐/阴离子，所以不会显示模拟黏度、密度或扩散系数。"
+        elif oedb_supported:
+            oedb_warning = " OEDB-MD 已作为低权重辅助模型参与黏度、密度和扩散趋势估计。"
         return {
             "salt": salt,
             "salt_smiles": SALT_SMILES.get(salt),
@@ -662,7 +713,7 @@ class FormulationRecommender:
                 "solubility_labels": has_lino3_training,
                 "binary_mixture_labels": has_binary_mixture_labels if salt == "LiNO3" else None,
                 "mixture_model": self.mixture_model.available,
-                "oedb_md_auxiliary": self.oedb_model.available and salt in self.oedb_model.supported_salts,
+                "oedb_md_auxiliary": oedb_supported,
             },
             "warning": (
                 "LiNO₃ 已纳入实测溶解度训练集，但当前主要标签来自纯溶剂；二元配比仍属于模型插值/外推，且没有 LiNO₃ 电导率训练标签。"
@@ -670,7 +721,7 @@ class FormulationRecommender:
                 else "该盐不在电导率训练集内；结果是候选优先级和起始配比，不是已验证溶解度或最终配方。"
                 if is_extrapolation
                 else "结果用于实验前筛选；最终配方仍需溶解度、电导率、界面兼容性和安全测试确认。"
-            ) + (
+            ) + oedb_warning + (
                 " 满足全部约束的候选不足，列表中已补充低置信度的放宽约束备选。"
                 if used_relaxed_fallback and any(
                     item["constraint_status"] == "relaxed" for item in selected

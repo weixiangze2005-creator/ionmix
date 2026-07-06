@@ -15,11 +15,21 @@ TRAINING_CODE_MAP = {
     "GBL": "g-Butyrolactone",
 }
 
+OEDB_CODE_MAP = {
+    # OEDB uses MA for methyl acetoacetate, while this app already uses MA
+    # for methyl acetate. Keep both available without mixing their identities.
+    "MAA": "MA",
+}
+OEDB_EXCLUDED_CODES = {"MA"}
+
 # 0 is poor and 1 is strong. These are coarse screening priors, not measured
 # electrochemical-window labels.
 OXIDATION_PRIOR = {
     "EC": 0.78, "PC": 0.75, "DMC": 0.70, "EMC": 0.72, "DEC": 0.73,
     "FEC": 0.84, "Sulfolane": 0.92, "TEP": 0.88, "TMP": 0.85,
+    "Ac": 0.50, "Ac2O": 0.46, "BC": 0.76, "DMI": 0.48,
+    "EB": 0.68, "EP": 0.66, "FAN": 0.72, "FEA": 0.76, "FEMC": 0.84,
+    "GN": 0.72, "MAA": 0.58, "MB": 0.66, "MP": 0.62, "SN": 0.78,
     "DME": 0.42, "DOL": 0.38, "THF": 0.30, "2-MeTHF": 0.34,
     "2-Glyme": 0.42, "3-Glyme": 0.44, "4-Glyme": 0.46,
     "DMSO": 0.56, "AN": 0.68, "DMF": 0.45, "NMP": 0.48, "GBL": 0.76,
@@ -28,6 +38,9 @@ OXIDATION_PRIOR = {
 REDUCTION_PRIOR = {
     "EC": 0.74, "FEC": 0.90, "DME": 0.74, "DOL": 0.72, "THF": 0.63,
     "2-MeTHF": 0.72, "2-Glyme": 0.73, "3-Glyme": 0.70, "4-Glyme": 0.68,
+    "Ac": 0.42, "Ac2O": 0.35, "BC": 0.50, "DMI": 0.34,
+    "EB": 0.55, "EP": 0.54, "FAN": 0.58, "FEA": 0.62, "FEMC": 0.78,
+    "GN": 0.56, "MAA": 0.42, "MB": 0.54, "MP": 0.44, "SN": 0.62,
     "DMSO": 0.30, "AN": 0.42, "DMF": 0.30, "NMP": 0.32,
     "PC": 0.45, "DMC": 0.56, "EMC": 0.58, "DEC": 0.60,
     "Sulfolane": 0.45, "GBL": 0.48, "BTFE": 0.83, "TTE": 0.88,
@@ -36,6 +49,8 @@ HAZARD_PRIOR = {
     "DMF": 0.85, "NMP": 0.82, "AN": 0.72, "DMSO": 0.35,
     "DEE": 0.75, "THF": 0.65, "DME": 0.62, "DOL": 0.58,
     "2-MeTHF": 0.52, "MA": 0.60, "EA": 0.50, "FEC": 0.42,
+    "Ac": 0.58, "Ac2O": 0.70, "DMI": 0.68, "FAN": 0.78,
+    "FEA": 0.58, "GN": 0.62, "MAA": 0.55, "SN": 0.48,
     "Sulfolane": 0.48, "TEP": 0.38, "TMP": 0.42,
 }
 MELTING_POINT_C = {
@@ -44,6 +59,10 @@ MELTING_POINT_C = {
     "FEC": 18.0, "DOL": -95.0, "2-MeTHF": -137.0, "THF": -109.0,
     "Sulfolane": 27.5, "2-Glyme": -68.0, "3-Glyme": -45.0, "4-Glyme": -30.0,
     "DMF": -61.0, "GBL": -43.5, "NMP": -24.0, "DEE": -116.0,
+    "Ac": -95.0, "Ac2O": -73.0, "BC": -25.0, "DMI": 8.0,
+    "EB": -93.0, "EP": -74.0, "FAN": -40.0, "FEA": -70.0,
+    "FEMC": -60.0, "GN": -29.0, "MAA": -80.0, "MB": -85.0,
+    "MP": -40.0, "SN": 58.0,
     "TEP": -56.0, "TMP": -46.0, "BTFE": -60.0, "TTE": -60.0,
 }
 
@@ -51,6 +70,11 @@ MELTING_POINT_C = {
 def load_catalog() -> pd.DataFrame:
     path = PROCESSED_CATALOG if PROCESSED_CATALOG.exists() else SEED_CATALOG
     df = pd.read_csv(path)
+    if path == PROCESSED_CATALOG and SEED_CATALOG.exists():
+        seed = pd.read_csv(SEED_CATALOG)
+        missing = seed[~seed["code"].isin(set(df["code"].astype(str)))]
+        if not missing.empty:
+            df = pd.concat([df, missing], ignore_index=True, sort=False)
     descriptor_rows = [molecular_descriptors(s) for s in df["smiles"]]
     desc = pd.DataFrame(descriptor_rows)
     for col in desc:
@@ -63,5 +87,7 @@ def load_catalog() -> pd.DataFrame:
     df["reduction_prior"] = df["code"].map(REDUCTION_PRIOR).fillna(0.55)
     df["hazard_prior"] = df["code"].map(HAZARD_PRIOR).fillna(0.45)
     df["melting_point_c"] = df["code"].map(MELTING_POINT_C).fillna(-20.0)
+    df["oedb_code"] = df["code"].map(OEDB_CODE_MAP).fillna(df["code"])
+    df.loc[df["code"].isin(OEDB_EXCLUDED_CODES), "oedb_code"] = ""
     df["pubchem_url"] = df.get("pubchem_url", pd.Series(dtype=str)).fillna("")
     return df

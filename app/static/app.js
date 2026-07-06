@@ -103,8 +103,14 @@ async function loadModelInfo() {
     const mixture = info.mixture_property_model;
     const mixtureRows = mixture?.metrics?.training_summary?.rows || 0;
     const lino3BinaryRows = mixture?.metrics?.solubility?.lino3_binary_rows || 0;
+    const oedb = info.oedb_auxiliary_model;
+    const oedbRows = oedb?.metrics?.training_summary?.rows || 0;
+    const solventCount = info.solvent_catalog?.count || 0;
+    const solventText = solventCount ? ` · 候选溶剂 ${solventCount} 种` : "";
     if (mixture?.available) {
-      pill.textContent = `配方模型在线 · 公开实验 ${mixtureRows.toLocaleString()} 条 · LiNO₃ 二元 ${lino3BinaryRows} 条`;
+      pill.textContent = oedb?.available
+        ? `配方模型在线 · 公开实验 ${mixtureRows.toLocaleString()} 条 · OEDB-MD ${oedbRows.toLocaleString()} 条 · LiNO₃ 二元 ${lino3BinaryRows} 条${solventText}`
+        : `配方模型在线 · 公开实验 ${mixtureRows.toLocaleString()} 条 · LiNO₃ 二元 ${lino3BinaryRows} 条${solventText}`;
     } else if (info.available) {
       pill.textContent = `模型在线 · 电导率 ${info.metrics.train_rows.toLocaleString()} 条 · LiNO₃ 溶解度 ${lino3Rows} 条`;
     } else if (lino3Rows > 0) {
