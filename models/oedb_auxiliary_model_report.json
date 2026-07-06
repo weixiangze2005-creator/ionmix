@@ -1,0 +1,80 @@
+{
+  "source": {
+    "name": "OEDB computational",
+    "url": "https://oedb.jp/",
+    "doi": "10.1038/s41524-026-02093-y",
+    "version": "2026-05-11",
+    "data_type": "high-throughput molecular dynamics simulation"
+  },
+  "training_summary": {
+    "rows": 5616,
+    "unique_cations": 3,
+    "unique_anions": 9,
+    "unique_solvents": 26
+  },
+  "target_metrics": {
+    "viscosity_mpas": {
+      "rows": 5616,
+      "mae": 3.07031,
+      "r2": 0.751,
+      "validation_rows": 1128,
+      "validation": "group_shuffle_by_cation_anion_solvent",
+      "target_column": "Viscosity (mPa·s)",
+      "transform": "log1p"
+    },
+    "density_g_cm3": {
+      "rows": 5616,
+      "mae": 0.00807402,
+      "r2": 0.9958,
+      "validation_rows": 1128,
+      "validation": "group_shuffle_by_cation_anion_solvent",
+      "target_column": "Density (g/cm³)",
+      "transform": "identity"
+    },
+    "cation_diffusivity_m2_s": {
+      "rows": 5608,
+      "mae": 2.80254e-11,
+      "r2": 0.9331,
+      "validation_rows": 1126,
+      "validation": "group_shuffle_by_cation_anion_solvent",
+      "target_column": "Cation's Diffusivity (m²/s)",
+      "transform": "log10"
+    },
+    "anion_diffusivity_m2_s": {
+      "rows": 5608,
+      "mae": 2.70576e-11,
+      "r2": 0.9417,
+      "validation_rows": 1126,
+      "validation": "group_shuffle_by_cation_anion_solvent",
+      "target_column": "Anion's Diffusivity (m²/s)",
+      "transform": "log10"
+    },
+    "solvent_diffusivity_m2_s": {
+      "rows": 5616,
+      "mae": 5.8014e-11,
+      "r2": 0.9668,
+      "validation_rows": 1128,
+      "validation": "group_shuffle_by_cation_anion_solvent",
+      "target_column": "Solvent's Diffusivity (m²/s)",
+      "transform": "log10"
+    },
+    "cation_anion_coordination": {
+      "rows": 5616,
+      "mae": 0.535407,
+      "r2": 0.7876,
+      "validation_rows": 1128,
+      "validation": "group_shuffle_by_cation_anion_solvent",
+      "target_column": "Coordination Number (Cation ← Anion)",
+      "transform": "identity"
+    },
+    "cation_solvent_coordination": {
+      "rows": 5616,
+      "mae": 0.662118,
+      "r2": 0.9,
+      "validation_rows": 1128,
+      "validation": "group_shuffle_by_cation_anion_solvent",
+      "target_column": "Coordination Number (Cation ← Solvent)",
+      "transform": "identity"
+    }
+  }
+}

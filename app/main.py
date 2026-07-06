@@ -10,6 +10,7 @@ from app.catalog import load_catalog
 from app.ml_model import ConductivityModel
 from app.lino3_model import LiNO3SolubilityModel
 from app.mixture_model import MixturePropertyModel
+from app.oedb_auxiliary_model import OEDBAuxiliaryModel
 from app.recommender import FormulationRecommender, RecommendationOptions
 from app.schemas import RecommendationRequest
 
@@ -52,6 +53,7 @@ def model_info():
     model = ConductivityModel()
     lino3_model = LiNO3SolubilityModel()
     mixture_model = MixturePropertyModel()
+    oedb_model = OEDBAuxiliaryModel()
     return {
         "available": model.available,
         "metrics": model.metrics,
@@ -68,6 +70,13 @@ def model_info():
             "available": mixture_model.available,
             "metrics": mixture_model.metrics,
             "source_csv": "data/mixture_experiments.csv",
+        },
+        "oedb_auxiliary_model": {
+            "available": oedb_model.available,
+            "metrics": oedb_model.metrics,
+            "supported_salts": oedb_model.supported_salts,
+            "supported_solvents": oedb_model.supported_solvents,
+            "data_type": "OEDB high-throughput molecular dynamics simulation",
         },
     }
 

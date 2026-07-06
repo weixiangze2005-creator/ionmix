@@ -11,6 +11,7 @@ from app.catalog import load_catalog
 from app.lino3_model import LiNO3SolubilityModel
 from app.ml_model import ConductivityModel
 from app.mixture_model import MixturePropertyModel
+from app.oedb_auxiliary_model import OEDBAuxiliaryModel
 
 
 SALT_ALIASES = {
@@ -111,6 +112,7 @@ class FormulationRecommender:
         self.model = ConductivityModel()
         self.lino3_model = LiNO3SolubilityModel()
         self.mixture_model = MixturePropertyModel()
+        self.oedb_model = OEDBAuxiliaryModel()
         self.scales = {
             column: (
                 float(self.catalog[column].quantile(0.05)),
@@ -365,6 +367,14 @@ class FormulationRecommender:
                     for solvent, fraction in components
                 ],
             },
+            "_oedb_input": {
+                "salt": salt,
+                "concentration": options.concentration,
+                "components": [
+                    (solvent["code"], fraction)
+                    for solvent, fraction in components
+                ],
+            },
         }
 
     def _generate_candidates(
@@ -535,6 +545,67 @@ class FormulationRecommender:
                     item["confidence_factors"].update(prediction["confidence_factors"])
                     item["basis"] = item["basis"] + " + 配方级公开实验模型"
 
+        if self.oedb_model.available:
+            oedb_predictions = self.oedb_model.predict_many(
+                [item["_oedb_input"] for item in candidates]
+            )
+            for item, prediction in zip(candidates, oedb_predictions):
+                if not prediction.get("available"):
+                    continue
+                properties = item["properties"]
+                viscosity = prediction.get("viscosity_mpas")
+                density = prediction.get("density_g_cm3")
+                cation_diffusivity = prediction.get("cation_diffusivity_m2_s")
+                anion_diffusivity = prediction.get("anion_diffusivity_m2_s")
+                solvent_diffusivity = prediction.get("solvent_diffusivity_m2_s")
+                ca_coordination = prediction.get("cation_anion_coordination")
+                cs_coordination = prediction.get("cation_solvent_coordination")
+                coverage = float(prediction.get("coverage", 0.0))
+
+                if viscosity is not None:
+                    properties["oedb_viscosity_mpas"] = round(float(viscosity), 3)
+                    viscosity_score = float(
+                        np.clip(1.0 - np.log1p(float(viscosity)) / np.log1p(20.0), 0.0, 1.0)
+                    )
+                    old_low_temp = properties["low_temperature_score"] / 100.0
+                    new_low_temp = 0.80 * old_low_temp + 0.20 * viscosity_score
+                    score_delta = (
+                        (options.weights or DEFAULT_WEIGHTS).get("low_temperature", DEFAULT_WEIGHTS["low_temperature"])
+                        / max(sum((options.weights or DEFAULT_WEIGHTS).values()), 1e-12)
+                        * (new_low_temp - old_low_temp)
+                        * 100
+                    )
+                    item["score"] = round(float(np.clip(item["score"] + score_delta, 0.0, 100.0)), 1)
+                    properties["low_temperature_score"] = round(new_low_temp * 100, 1)
+                if cation_diffusivity is not None:
+                    properties["oedb_cation_diffusivity_m2_s"] = float(f"{float(cation_diffusivity):.4g}")
+                    diffusion_score = float(
+                        np.clip((np.log10(max(float(cation_diffusivity), 1e-14)) + 10.5) / 2.0, 0.0, 1.0)
+                    )
+                    old_transport = properties["conductivity_score"] / 100.0
+                    new_transport = 0.88 * old_transport + 0.12 * diffusion_score
+                    score_delta = item["_conductivity_weight"] * (new_transport - old_transport) * 100
+                    item["score"] = round(float(np.clip(item["score"] + score_delta, 0.0, 100.0)), 1)
+                    properties["conductivity_score"] = round(new_transport * 100, 1)
+                if density is not None:
+                    properties["oedb_density_g_cm3"] = round(float(density), 4)
+                if anion_diffusivity is not None:
+                    properties["oedb_anion_diffusivity_m2_s"] = float(f"{float(anion_diffusivity):.4g}")
+                if solvent_diffusivity is not None:
+                    properties["oedb_solvent_diffusivity_m2_s"] = float(f"{float(solvent_diffusivity):.4g}")
+                if ca_coordination is not None:
+                    properties["oedb_cation_anion_coordination"] = round(float(ca_coordination), 3)
+                if cs_coordination is not None:
+                    properties["oedb_cation_solvent_coordination"] = round(float(cs_coordination), 3)
+
+                properties["oedb_md_coverage"] = round(coverage * 100, 1)
+                confidence = float(prediction.get("confidence", 20.0))
+                if item["_constraint_penalty"] > 0:
+                    confidence *= max(0.35, 1.0 - item["_constraint_penalty"] * 1.8)
+                item["confidence"] = round(float(max(item["confidence"], confidence)), 1)
+                item["confidence_factors"]["oedb_md_coverage"] = round(coverage, 4)
+                item["basis"] = item["basis"] + " + OEDB-MD 辅助模型"
+
         candidates.sort(key=lambda item: item["score"], reverse=True)
         if options.return_all_above_threshold:
             threshold = float(options.score_threshold)
@@ -565,6 +636,7 @@ class FormulationRecommender:
                 "_lino3_input",
                 "_ml_input",
                 "_mixture_input",
+                "_oedb_input",
                 "formula_key",
             ):
                 item.pop(key, None)
@@ -590,6 +662,7 @@ class FormulationRecommender:
                 "solubility_labels": has_lino3_training,
                 "binary_mixture_labels": has_binary_mixture_labels if salt == "LiNO3" else None,
                 "mixture_model": self.mixture_model.available,
+                "oedb_md_auxiliary": self.oedb_model.available and salt in self.oedb_model.supported_salts,
             },
             "warning": (
                 "LiNO₃ 已纳入实测溶解度训练集，但当前主要标签来自纯溶剂；二元配比仍属于模型插值/外推，且没有 LiNO₃ 电导率训练标签。"

@@ -167,8 +167,19 @@ function renderCard(item, index) {
   const confidenceFactors = Object.entries(item.confidence_factors || {})
     .map(([key, value]) => `<span class="confidence-factor">${factorLabels[key] || key} ${Math.round(value * 100)}%</span>`)
     .join("");
-  const conductivity = item.predicted_conductivity === null ? "代理分数" : item.predicted_conductivity;
-  const conductivityLabel = item.predicted_conductivity === null ? "传输模式" : "预测电导率";
+  const conductivity = item.predicted_conductivity === null ? p.conductivity_score : item.predicted_conductivity;
+  const conductivityLabel = item.predicted_conductivity === null ? "离子传输评分" : "预测电导率";
+  const viscosityLabel = p.oedb_viscosity_mpas === undefined ? "混合黏度" : "OEDB-MD 黏度";
+  const viscosityValue = p.oedb_viscosity_mpas === undefined
+    ? `${p.viscosity_mpas} mPa·s`
+    : `${p.oedb_viscosity_mpas} mPa·s`;
+  const oedbExtraMetrics = p.oedb_density_g_cm3 === undefined ? "" : [
+    metric("OEDB-MD 密度", `${p.oedb_density_g_cm3} g/cm³`),
+    p.oedb_cation_diffusivity_m2_s === undefined
+      ? ""
+      : metric("OEDB-MD Li⁺扩散", Number(p.oedb_cation_diffusivity_m2_s).toExponential(2)),
+    metric("OEDB 覆盖", `${p.oedb_md_coverage}%`),
+  ].join("");
   const solubilityValue = item.predicted_solubility_mole_fraction === null
     ? p.solubility_score
     : item.predicted_solubility_mole_fraction;
@@ -190,10 +201,11 @@ function renderCard(item, index) {
           <div class="metrics">
             ${metric("置信度", `${item.confidence}%`)}
             ${metric(conductivityLabel, conductivity)}
-            ${metric("混合黏度", `${p.viscosity_mpas} mPa·s`)}
+            ${metric(viscosityLabel, viscosityValue)}
             ${metric(solubilityLabel, solubilityValue)}
             ${metric("稳定评分", p.stability_score)}
             ${metric("估算闪点", `${p.flash_point_c} °C`)}
+            ${oedbExtraMetrics}
           </div>
         </div>
       </div>

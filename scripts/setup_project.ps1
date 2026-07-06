@@ -14,4 +14,5 @@ $env:PYTHONPATH = $Root
 & ".venv\Scripts\python.exe" "scripts\train_conductivity_model.py"
 & ".venv\Scripts\python.exe" "scripts\train_lino3_solubility_model.py"
 & ".venv\Scripts\python.exe" "scripts\train_mixture_model.py"
+& ".venv\Scripts\python.exe" "scripts\train_oedb_auxiliary_model.py"
 Write-Host "Setup complete. Run .\scripts\start.ps1 to launch the application."

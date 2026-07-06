@@ -22,6 +22,9 @@ def test_health_and_model():
     assert info["mixture_property_model"]["available"] is True
     assert info["mixture_property_model"]["metrics"]["training_summary"]["rows"] > 10000
     assert info["mixture_property_model"]["metrics"]["solubility"]["lino3_binary_rows"] == 15
+    assert info["oedb_auxiliary_model"]["available"] is True
+    assert info["oedb_auxiliary_model"]["metrics"]["training_summary"]["rows"] == 5616
+    assert "LiPF6" in info["oedb_auxiliary_model"]["supported_salts"]
 
 
 def test_weight_ui_explains_and_starts_at_one_hundred_percent():
@@ -79,6 +82,7 @@ def test_known_salt_uses_ml():
     assert response.status_code == 200
     rows = response.json()["recommendations"]
     assert any(row["predicted_conductivity"] is not None for row in rows)
+    assert any("oedb_viscosity_mpas" in row["properties"] for row in rows)
     scores = [row["score"] for row in rows]
     assert scores == sorted(scores, reverse=True)
 
