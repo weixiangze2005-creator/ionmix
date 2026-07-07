@@ -509,11 +509,18 @@ class FormulationRecommender:
                 item["constraint_status"] == "relaxed" for item in candidates
             )
 
+        model_pool_size = (
+            len(candidates)
+            if options.return_all_above_threshold
+            else min(len(candidates), max(1200, options.top_k * 160))
+        )
+        model_candidates = sorted(candidates, key=lambda item: item["score"], reverse=True)[:model_pool_size]
+
         if salt == "LiNO3" and self.lino3_model.available:
             lino3_predictions = self.lino3_model.predict_many(
-                [item["_lino3_input"] for item in candidates]
+                [item["_lino3_input"] for item in model_candidates]
             )
-            for item, prediction in zip(candidates, lino3_predictions):
+            for item, prediction in zip(model_candidates, lino3_predictions):
                 score_delta = item["_solubility_weight"] * (
                     prediction["score"] - item["_heuristic_solubility_score"]
                 ) * 100
@@ -534,7 +541,7 @@ class FormulationRecommender:
         if salt in self.model.supported_salts:
             covered = [
                 item
-                for item in candidates
+                for item in model_candidates
                 if item["_ml_input"]
                 and item["_ml_input"]["solvent_a"] in self.model.supported_solvents
                 and item["_ml_input"]["solvent_b"] in self.model.supported_solvents
@@ -554,9 +561,9 @@ class FormulationRecommender:
 
         if self.mixture_model.available:
             mixture_predictions = self.mixture_model.predict_many(
-                [item["_mixture_input"] for item in candidates]
+                [item["_mixture_input"] for item in model_candidates]
             )
-            for item, prediction in zip(candidates, mixture_predictions):
+            for item, prediction in zip(model_candidates, mixture_predictions):
                 if prediction["solubility_score"] is not None:
                     old_score = item["properties"]["solubility_score"] / 100.0
                     new_score = float(prediction["solubility_score"])
@@ -589,8 +596,8 @@ class FormulationRecommender:
                 if options.return_all_above_threshold
                 else max(1200, options.top_k * 150)
             )
-            oedb_pool_size = min(len(candidates), oedb_pool_size)
-            oedb_pool = sorted(candidates, key=lambda item: item["score"], reverse=True)[:oedb_pool_size]
+            oedb_pool_size = min(len(model_candidates), oedb_pool_size)
+            oedb_pool = sorted(model_candidates, key=lambda item: item["score"], reverse=True)[:oedb_pool_size]
             oedb_predictions = self.oedb_model.predict_many(
                 [item["_oedb_input"] for item in oedb_pool]
             )

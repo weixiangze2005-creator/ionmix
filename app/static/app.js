@@ -21,6 +21,8 @@ let adjustingWeights = false;
 let allRecommendations = [];
 let currentPage = 1;
 const pageSize = 10;
+let currentUser = null;
+let lastRequestBody = null;
 
 function largestRemainder(values, targetTotal) {
   const floors = values.map(Math.floor);
@@ -141,6 +143,166 @@ async function readErrorMessage(response) {
   return compact ? compact.slice(0, 240) : `请求失败，HTTP ${response.status}`;
 }
 
+function openModal(id) {
+  document.querySelector(`#${id}`).classList.remove("hidden");
+}
+
+function closeModal(id) {
+  document.querySelector(`#${id}`).classList.add("hidden");
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderAuthState() {
+  const loginButton = document.querySelector("#auth-open");
+  const historyButton = document.querySelector("#history-open");
+  const logoutButton = document.querySelector("#logout");
+  if (currentUser) {
+    loginButton.textContent = currentUser.display_name || currentUser.email;
+    historyButton.classList.remove("hidden");
+    logoutButton.classList.remove("hidden");
+  } else {
+    loginButton.textContent = "登录 / 注册";
+    historyButton.classList.add("hidden");
+    logoutButton.classList.add("hidden");
+  }
+  if (allRecommendations.length) renderPage();
+}
+
+async function loadSession() {
+  try {
+    const response = await fetch("/api/auth/me");
+    const data = await response.json();
+    currentUser = data.user || null;
+  } catch {
+    currentUser = null;
+  }
+  renderAuthState();
+}
+
+async function submitAuth(mode) {
+  const message = document.querySelector("#auth-message");
+  message.textContent = "";
+  const body = {
+    email: document.querySelector("#auth-email").value,
+    password: document.querySelector("#auth-password").value,
+    display_name: document.querySelector("#auth-name").value,
+  };
+  try {
+    const response = await fetch(`/api/auth/${mode}`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(await readErrorMessage(response));
+    const data = await response.json();
+    currentUser = data.user;
+    closeModal("auth-modal");
+    renderAuthState();
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+async function logout() {
+  await fetch("/api/auth/logout", {method: "POST"});
+  currentUser = null;
+  renderAuthState();
+}
+
+function defaultFormulaName(item) {
+  const formula = (item.components || [])
+    .map(component => component.code)
+    .join(" + ");
+  const now = new Date().toLocaleString("zh-CN", {month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"});
+  return `${formula || "候选配方"} · ${now}`;
+}
+
+async function saveRecommendation(index) {
+  if (!currentUser) {
+    openModal("auth-modal");
+    return;
+  }
+  const item = allRecommendations[index];
+  if (!item) return;
+  const name = window.prompt("给这个配方起个名字：", defaultFormulaName(item));
+  if (!name) return;
+  try {
+    const response = await fetch("/api/history", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        name,
+        recommendation: item,
+        request_context: lastRequestBody || {},
+      }),
+    });
+    if (!response.ok) throw new Error(await readErrorMessage(response));
+    document.querySelector("#notice").textContent = `已保存到历史配方：${name}`;
+    document.querySelector("#notice").classList.remove("hidden");
+  } catch (error) {
+    window.alert(`保存失败：${error.message}`);
+  }
+}
+
+function renderHistory(items) {
+  const list = document.querySelector("#history-list");
+  if (!items.length) {
+    list.innerHTML = `<div class="empty-history">还没有保存配方。先运行筛选，然后点击候选卡片里的“保存配方”。</div>`;
+    return;
+  }
+  list.innerHTML = items.map(item => {
+    const created = new Date(item.created_at).toLocaleString("zh-CN");
+    const components = item.recommendation?.components || [];
+    const ratios = components.map(component => `${component.code} ${component.ratio}%`).join(" · ");
+    return `
+      <article class="history-item">
+        <div>
+          <h3>${escapeHtml(item.name)}</h3>
+          <p>${escapeHtml(item.formula)}</p>
+          <p>${escapeHtml(ratios || "历史配方")}</p>
+          <div class="history-meta">
+            <span>综合评分 ${item.score ?? "-"}</span>
+            <span>置信度 ${item.confidence ?? "-"}%</span>
+            <span>${created}</span>
+          </div>
+        </div>
+        <button class="small-action danger" data-delete-history="${item.id}" type="button">删除</button>
+      </article>`;
+  }).join("");
+}
+
+async function loadHistory() {
+  if (!currentUser) {
+    openModal("auth-modal");
+    return;
+  }
+  openModal("history-modal");
+  const list = document.querySelector("#history-list");
+  list.innerHTML = "正在读取历史配方……";
+  try {
+    const response = await fetch("/api/history");
+    if (!response.ok) throw new Error(await readErrorMessage(response));
+    const data = await response.json();
+    renderHistory(data.items || []);
+  } catch (error) {
+    list.innerHTML = `读取失败：${error.message}`;
+  }
+}
+
+async function deleteHistoryItem(id) {
+  if (!window.confirm("确定删除这条历史配方吗？")) return;
+  const response = await fetch(`/api/history/${id}`, {method: "DELETE"});
+  if (response.ok) loadHistory();
+}
+
 function metric(label, value) {
   return `<div class="metric"><span>${label}</span><b>${value}</b></div>`;
 }
@@ -192,6 +354,9 @@ function renderCard(item, index) {
   const solubilityLabel = item.predicted_solubility_mole_fraction === null
     ? "溶解评分"
     : "预测溶解度 x";
+  const saveButton = currentUser
+    ? `<button class="small-action save-formula" data-save-index="${index}" type="button">保存配方</button>`
+    : "";
   return `
     <article class="result-card" style="animation-delay:${index * 35}ms">
       <div class="card-main">
@@ -216,7 +381,7 @@ function renderCard(item, index) {
         </div>
       </div>
       <div class="card-detail">
-        <span class="basis">${item.basis}</span>
+        <div class="card-actions"><span class="basis">${item.basis}</span>${saveButton}</div>
         <div class="reasons">${confidenceFactors}${reasons}${violations}</div>
       </div>
     </article>`;
@@ -272,6 +437,7 @@ async function runScreening() {
     allow_relaxed_fallback: true,
     weights,
   };
+  lastRequestBody = body;
 
   try {
     const response = await fetch("/api/recommend", {
@@ -303,6 +469,22 @@ async function runScreening() {
 }
 
 document.querySelector("#run").addEventListener("click", runScreening);
+document.querySelector("#auth-open").addEventListener("click", () => openModal("auth-modal"));
+document.querySelector("#history-open").addEventListener("click", loadHistory);
+document.querySelector("#logout").addEventListener("click", logout);
+document.querySelector("#login").addEventListener("click", () => submitAuth("login"));
+document.querySelector("#register").addEventListener("click", () => submitAuth("register"));
+document.querySelectorAll("[data-close]").forEach(button => {
+  button.addEventListener("click", () => closeModal(button.dataset.close));
+});
+document.querySelector("#cards").addEventListener("click", event => {
+  const button = event.target.closest("[data-save-index]");
+  if (button) saveRecommendation(Number(button.dataset.saveIndex));
+});
+document.querySelector("#history-list").addEventListener("click", event => {
+  const button = event.target.closest("[data-delete-history]");
+  if (button) deleteHistoryItem(Number(button.dataset.deleteHistory));
+});
 document.querySelector("#prev-page").addEventListener("click", () => {
   currentPage -= 1;
   renderPage();
@@ -312,3 +494,4 @@ document.querySelector("#next-page").addEventListener("click", () => {
   renderPage();
 });
 loadModelInfo();
+loadSession();

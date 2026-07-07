@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app import auth_store
 from app.catalog import load_catalog
 from app.ml_model import ConductivityModel
 from app.lino3_model import LiNO3SolubilityModel
 from app.mixture_model import MixturePropertyModel
 from app.oedb_auxiliary_model import OEDBAuxiliaryModel
 from app.recommender import FormulationRecommender, RecommendationOptions
-from app.schemas import RecommendationRequest
+from app.schemas import AuthRequest, RecommendationRequest, SavedFormulaRequest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +27,31 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 recommender = FormulationRecommender()
+auth_store.init_db()
+
+
+def current_user_optional(request: Request) -> dict | None:
+    token = request.cookies.get(auth_store.SESSION_COOKIE)
+    return auth_store.user_from_session(token)
+
+
+def current_user(request: Request) -> dict:
+    user = current_user_optional(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="请先登录。")
+    return user
+
+
+def set_session_cookie(response: Response, token: str, expires_at: str) -> None:
+    response.set_cookie(
+        auth_store.SESSION_COOKIE,
+        token,
+        httponly=True,
+        samesite="lax",
+        max_age=auth_store.SESSION_DAYS * 24 * 60 * 60,
+        expires=expires_at,
+        path="/",
+    )
 
 
 @app.get("/")
@@ -36,6 +62,70 @@ def index():
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/api/auth/register")
+def register(payload: AuthRequest, response: Response):
+    try:
+        user = auth_store.create_user(
+            payload.email,
+            payload.password,
+            payload.display_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session = auth_store.create_session(user["id"])
+    set_session_cookie(response, session["token"], session["expires_at"])
+    return {"user": user}
+
+
+@app.post("/api/auth/login")
+def login(payload: AuthRequest, response: Response):
+    user = auth_store.authenticate_user(payload.email, payload.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="邮箱或密码不正确。")
+    session = auth_store.create_session(user["id"])
+    set_session_cookie(response, session["token"], session["expires_at"])
+    return {"user": user}
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response):
+    auth_store.delete_session(request.cookies.get(auth_store.SESSION_COOKIE))
+    response.delete_cookie(auth_store.SESSION_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def me(request: Request):
+    return {"user": current_user_optional(request)}
+
+
+@app.get("/api/history")
+def history(user: dict = Depends(current_user)):
+    return {"items": auth_store.list_formulations(user["id"])}
+
+
+@app.post("/api/history")
+def save_history(payload: SavedFormulaRequest, user: dict = Depends(current_user)):
+    try:
+        item = auth_store.save_formulation(
+            user_id=user["id"],
+            name=payload.name,
+            recommendation=payload.recommendation,
+            request_context=payload.request_context,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"item": item}
+
+
+@app.delete("/api/history/{formulation_id}")
+def delete_history(formulation_id: int, user: dict = Depends(current_user)):
+    deleted = auth_store.delete_formulation(user["id"], formulation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="没有找到这条历史配方。")
+    return {"ok": True}
 
 
 @app.get("/api/solvents")

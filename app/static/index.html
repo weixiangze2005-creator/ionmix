@@ -11,7 +11,12 @@
     <div class="hero-noise" aria-hidden="true"></div>
     <nav>
       <div class="brand"><span class="brand-mark">E</span> Electrolyte Explorer</div>
-      <div class="model-pill" id="model-pill">模型状态检查中</div>
+      <div class="nav-actions">
+        <div class="model-pill" id="model-pill">模型状态检查中</div>
+        <button id="auth-open" class="auth-button" type="button">登录 / 注册</button>
+        <button id="history-open" class="auth-button hidden" type="button">历史配方</button>
+        <button id="logout" class="auth-button ghost hidden" type="button">退出</button>
+      </div>
     </nav>
     <div class="hero-copy">
       <div class="eyebrow">MOLECULE → MIXTURE → EXPERIMENT</div>
@@ -136,6 +141,39 @@
     <span>Data: CALiSol-23 · PubChem PUG REST · LiNO₃ solubility</span>
     <span>Cheminformatics: RDKit · physical constraints</span>
   </footer>
+
+  <div id="auth-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <button class="modal-close" data-close="auth-modal" type="button">×</button>
+      <div class="section-number">ACCOUNT</div>
+      <h2>登录账号</h2>
+      <p class="modal-help">登录后可以把筛选后的配方命名并保存到自己的历史记录里。</p>
+      <label>邮箱
+        <input id="auth-email" type="email" autocomplete="email" placeholder="you@example.com">
+      </label>
+      <label>密码
+        <input id="auth-password" type="password" autocomplete="current-password" placeholder="至少 8 位">
+      </label>
+      <label>昵称（注册时可填）
+        <input id="auth-name" type="text" maxlength="40" placeholder="比如：锂盐探索者">
+      </label>
+      <div class="modal-actions">
+        <button id="login" class="small-action" type="button">登录</button>
+        <button id="register" class="small-action secondary" type="button">注册并登录</button>
+      </div>
+      <p id="auth-message" class="form-message"></p>
+    </div>
+  </div>
+
+  <div id="history-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card wide">
+      <button class="modal-close" data-close="history-modal" type="button">×</button>
+      <div class="section-number">SAVED</div>
+      <h2>我的历史配方</h2>
+      <p class="modal-help">这里保存的是你手动命名的候选配方；免费 Render 本地存储不适合长期保存，后续可以接 Supabase 或 Render Postgres。</p>
+      <div id="history-list" class="history-list"></div>
+    </div>
+  </div>
   <script src="/static/app.js"></script>
 </body>
 </html>

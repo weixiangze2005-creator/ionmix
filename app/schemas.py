@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -27,3 +29,15 @@ class RecommendationRequest(BaseModel):
     return_all_above_threshold: bool = False
     allow_relaxed_fallback: bool = True
     weights: WeightInput = WeightInput()
+
+
+class AuthRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=120)
+    password: str = Field(..., min_length=8, max_length=200)
+    display_name: str | None = Field(None, max_length=40)
+
+
+class SavedFormulaRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    recommendation: dict[str, Any]
+    request_context: dict[str, Any] | None = None

@@ -3,6 +3,8 @@ __pycache__/
 .pytest_cache/
 *.pyc
 *.docx
+*.sqlite3
+*.sqlite3-*
 
 # Keep trained model artifacts in the repository for cloud deployment.
 # The largest current model is below GitHub's 100 MB per-file limit.
