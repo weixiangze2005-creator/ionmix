@@ -27,16 +27,56 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 recommender = FormulationRecommender()
-auth_store.init_db()
+
+
+def account_storage_status() -> dict:
+    backend = "postgresql" if auth_store.using_postgres() else "sqlite"
+    try:
+        auth_store.init_db()
+    except Exception:
+        return {
+            "backend": backend,
+            "persistent": False,
+            "available": False,
+        }
+    return {
+        "backend": backend,
+        "persistent": bool(auth_store.using_postgres()),
+        "available": True,
+    }
+
+
+def ensure_account_storage() -> None:
+    try:
+        auth_store.init_db()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="账户存储暂时不可用，请检查 Render 的 Supabase 数据库连接配置。",
+        ) from exc
 
 
 def current_user_optional(request: Request) -> dict | None:
     token = request.cookies.get(auth_store.SESSION_COOKIE)
-    return auth_store.user_from_session(token)
+    if not token:
+        return None
+    try:
+        return auth_store.user_from_session(token)
+    except Exception:
+        return None
 
 
 def current_user(request: Request) -> dict:
-    user = current_user_optional(request)
+    token = request.cookies.get(auth_store.SESSION_COOKIE)
+    if not token:
+        raise HTTPException(status_code=401, detail="请先登录。")
+    try:
+        user = auth_store.user_from_session(token)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="账户存储暂时不可用，请稍后重试。",
+        ) from exc
     if not user:
         raise HTTPException(status_code=401, detail="请先登录。")
     return user
@@ -66,6 +106,7 @@ def health():
 
 @app.post("/api/auth/register")
 def register(payload: AuthRequest, response: Response):
+    ensure_account_storage()
     try:
         user = auth_store.create_user(
             payload.email,
@@ -81,6 +122,7 @@ def register(payload: AuthRequest, response: Response):
 
 @app.post("/api/auth/login")
 def login(payload: AuthRequest, response: Response):
+    ensure_account_storage()
     user = auth_store.authenticate_user(payload.email, payload.password)
     if not user:
         raise HTTPException(status_code=401, detail="邮箱或密码不正确。")
@@ -91,6 +133,7 @@ def login(payload: AuthRequest, response: Response):
 
 @app.post("/api/auth/logout")
 def logout(request: Request, response: Response):
+    ensure_account_storage()
     auth_store.delete_session(request.cookies.get(auth_store.SESSION_COOKIE))
     response.delete_cookie(auth_store.SESSION_COOKIE, path="/")
     return {"ok": True}
@@ -157,8 +200,7 @@ def model_info():
             "oedb_overlap_count": int(catalog["oedb_code"].astype(str).str.len().gt(0).sum()),
         },
         "account_storage": {
-            "backend": "postgresql" if auth_store.using_postgres() else "sqlite",
-            "persistent": bool(auth_store.using_postgres()),
+            **account_storage_status(),
         },
         "lino3_solubility_model": {
             "available": lino3_model.available,

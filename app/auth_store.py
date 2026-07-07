@@ -54,7 +54,12 @@ def connect():
             raise RuntimeError(
                 "PostgreSQL database URL is configured, but psycopg is not installed."
             ) from exc
-        return psycopg.connect(database_url(), row_factory=dict_row, prepare_threshold=None)
+        return psycopg.connect(
+            database_url(),
+            row_factory=dict_row,
+            prepare_threshold=None,
+            connect_timeout=3,
+        )
 
     path = database_path()
     path.parent.mkdir(parents=True, exist_ok=True)
