@@ -21,6 +21,19 @@ _init_lock = threading.Lock()
 _initialised = False
 
 
+def database_url() -> str | None:
+    return (
+        os.getenv("IONMIX_DATABASE_URL")
+        or os.getenv("SUPABASE_DB_URL")
+        or os.getenv("DATABASE_URL")
+    )
+
+
+def using_postgres() -> bool:
+    url = database_url()
+    return bool(url and url.startswith(("postgres://", "postgresql://")))
+
+
 def database_path() -> Path:
     configured = os.getenv("IONMIX_AUTH_DB")
     if configured:
@@ -28,13 +41,38 @@ def database_path() -> Path:
     return DEFAULT_DB_PATH
 
 
-def connect() -> sqlite3.Connection:
+def param() -> str:
+    return "%s" if using_postgres() else "?"
+
+
+def connect():
+    if using_postgres():
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+        except ImportError as exc:
+            raise RuntimeError(
+                "PostgreSQL database URL is configured, but psycopg is not installed."
+            ) from exc
+        return psycopg.connect(database_url(), row_factory=dict_row, prepare_threshold=None)
+
     path = database_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def execute_script(conn, statements: str) -> None:
+    if using_postgres():
+        with conn.cursor() as cursor:
+            for statement in statements.split(";"):
+                clean = statement.strip()
+                if clean:
+                    cursor.execute(clean)
+    else:
+        conn.executescript(statements)
 
 
 def init_db() -> None:
@@ -45,41 +83,80 @@ def init_db() -> None:
         if _initialised:
             return
         with connect() as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    email TEXT NOT NULL UNIQUE,
-                    display_name TEXT NOT NULL,
-                    password_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                );
+            if using_postgres():
+                execute_script(
+                    conn,
+                    """
+                    CREATE TABLE IF NOT EXISTS users (
+                        id BIGSERIAL PRIMARY KEY,
+                        email TEXT NOT NULL UNIQUE,
+                        display_name TEXT NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
 
-                CREATE TABLE IF NOT EXISTS sessions (
-                    token TEXT PRIMARY KEY,
-                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL
-                );
+                    CREATE TABLE IF NOT EXISTS sessions (
+                        token TEXT PRIMARY KEY,
+                        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL
+                    );
 
-                CREATE TABLE IF NOT EXISTS saved_formulations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    name TEXT NOT NULL,
-                    formula TEXT NOT NULL,
-                    score REAL,
-                    confidence REAL,
-                    recommendation_json TEXT NOT NULL,
-                    request_json TEXT,
-                    created_at TEXT NOT NULL
-                );
+                    CREATE TABLE IF NOT EXISTS saved_formulations (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        name TEXT NOT NULL,
+                        formula TEXT NOT NULL,
+                        score DOUBLE PRECISION,
+                        confidence DOUBLE PRECISION,
+                        recommendation_json TEXT NOT NULL,
+                        request_json TEXT,
+                        created_at TEXT NOT NULL
+                    );
 
-                CREATE INDEX IF NOT EXISTS idx_saved_formulations_user_created
-                    ON saved_formulations(user_id, created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_sessions_expires_at
-                    ON sessions(expires_at);
-                """
-            )
+                    CREATE INDEX IF NOT EXISTS idx_saved_formulations_user_created
+                        ON saved_formulations(user_id, created_at DESC);
+                    CREATE INDEX IF NOT EXISTS idx_sessions_expires_at
+                        ON sessions(expires_at);
+                    """,
+                )
+            else:
+                execute_script(
+                    conn,
+                    """
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        email TEXT NOT NULL UNIQUE,
+                        display_name TEXT NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
+
+                    CREATE TABLE IF NOT EXISTS sessions (
+                        token TEXT PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL
+                    );
+
+                    CREATE TABLE IF NOT EXISTS saved_formulations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        name TEXT NOT NULL,
+                        formula TEXT NOT NULL,
+                        score REAL,
+                        confidence REAL,
+                        recommendation_json TEXT NOT NULL,
+                        request_json TEXT,
+                        created_at TEXT NOT NULL
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_saved_formulations_user_created
+                        ON saved_formulations(user_id, created_at DESC);
+                    CREATE INDEX IF NOT EXISTS idx_sessions_expires_at
+                        ON sessions(expires_at);
+                    """,
+                )
         _initialised = True
 
 
@@ -109,7 +186,7 @@ def verify_password(password: str, encoded: str) -> bool:
         return False
 
 
-def public_user(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+def public_user(row: Any) -> dict[str, Any]:
     return {
         "id": int(row["id"]),
         "email": row["email"],
@@ -129,27 +206,40 @@ def create_user(email: str, password: str, display_name: str | None = None) -> d
     created_at = now_iso()
     try:
         with connect() as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO users (email, display_name, password_hash, created_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (clean_email, name, hash_password(password), created_at),
-            )
-            row = conn.execute(
-                "SELECT id, email, display_name, created_at FROM users WHERE id = ?",
-                (cursor.lastrowid,),
-            ).fetchone()
+            if using_postgres():
+                row = conn.execute(
+                    """
+                    INSERT INTO users (email, display_name, password_hash, created_at)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id, email, display_name, created_at
+                    """,
+                    (clean_email, name, hash_password(password), created_at),
+                ).fetchone()
+            else:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO users (email, display_name, password_hash, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (clean_email, name, hash_password(password), created_at),
+                )
+                row = conn.execute(
+                    "SELECT id, email, display_name, created_at FROM users WHERE id = ?",
+                    (cursor.lastrowid,),
+                ).fetchone()
             return public_user(row)
-    except sqlite3.IntegrityError as exc:
-        raise ValueError("这个邮箱已经注册过了。") from exc
+    except Exception as exc:
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            raise ValueError("这个邮箱已经注册过了。") from exc
+        raise
 
 
 def authenticate_user(email: str, password: str) -> dict[str, Any] | None:
     init_db()
     clean_email = email.strip().lower()
+    marker = param()
     with connect() as conn:
-        row = conn.execute("SELECT * FROM users WHERE email = ?", (clean_email,)).fetchone()
+        row = conn.execute(f"SELECT * FROM users WHERE email = {marker}", (clean_email,)).fetchone()
     if not row or not verify_password(password, row["password_hash"]):
         return None
     return public_user(row)
@@ -160,11 +250,12 @@ def create_session(user_id: int) -> dict[str, str]:
     token = secrets.token_urlsafe(36)
     created_at = datetime.now(UTC).replace(microsecond=0)
     expires_at = created_at + timedelta(days=SESSION_DAYS)
+    marker = param()
     with connect() as conn:
         conn.execute(
-            """
+            f"""
             INSERT INTO sessions (token, user_id, created_at, expires_at)
-            VALUES (?, ?, ?, ?)
+            VALUES ({marker}, {marker}, {marker}, {marker})
             """,
             (token, user_id, created_at.isoformat(), expires_at.isoformat()),
         )
@@ -175,8 +266,9 @@ def delete_session(token: str | None) -> None:
     if not token:
         return
     init_db()
+    marker = param()
     with connect() as conn:
-        conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        conn.execute(f"DELETE FROM sessions WHERE token = {marker}", (token,))
 
 
 def user_from_session(token: str | None) -> dict[str, Any] | None:
@@ -184,17 +276,18 @@ def user_from_session(token: str | None) -> dict[str, Any] | None:
         return None
     init_db()
     now = datetime.now(UTC).replace(microsecond=0).isoformat()
+    marker = param()
     with connect() as conn:
         row = conn.execute(
-            """
+            f"""
             SELECT users.id, users.email, users.display_name, users.created_at
             FROM sessions
             JOIN users ON users.id = sessions.user_id
-            WHERE sessions.token = ? AND sessions.expires_at > ?
+            WHERE sessions.token = {marker} AND sessions.expires_at > {marker}
             """,
             (token, now),
         ).fetchone()
-        conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
+        conn.execute(f"DELETE FROM sessions WHERE expires_at <= {marker}", (now,))
     return public_user(row) if row else None
 
 
@@ -223,26 +316,40 @@ def save_formulation(
         raise ValueError("请给这个配方起一个名字。")
     formula = formula_from_recommendation(recommendation)
     created_at = now_iso()
+    payload = (
+        user_id,
+        clean_name,
+        formula,
+        recommendation.get("score"),
+        recommendation.get("confidence"),
+        json.dumps(recommendation, ensure_ascii=False),
+        json.dumps(request_context or {}, ensure_ascii=False),
+        created_at,
+    )
     with connect() as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO saved_formulations
-                (user_id, name, formula, score, confidence, recommendation_json, request_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                user_id,
-                clean_name,
-                formula,
-                recommendation.get("score"),
-                recommendation.get("confidence"),
-                json.dumps(recommendation, ensure_ascii=False),
-                json.dumps(request_context or {}, ensure_ascii=False),
-                created_at,
-            ),
-        )
+        if using_postgres():
+            row = conn.execute(
+                """
+                INSERT INTO saved_formulations
+                    (user_id, name, formula, score, confidence, recommendation_json, request_json, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                payload,
+            ).fetchone()
+            item_id = int(row["id"])
+        else:
+            cursor = conn.execute(
+                """
+                INSERT INTO saved_formulations
+                    (user_id, name, formula, score, confidence, recommendation_json, request_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                payload,
+            )
+            item_id = int(cursor.lastrowid)
     return {
-        "id": int(cursor.lastrowid),
+        "id": item_id,
         "name": clean_name,
         "formula": formula,
         "score": recommendation.get("score"),
@@ -255,14 +362,15 @@ def save_formulation(
 
 def list_formulations(user_id: int, limit: int = 80) -> list[dict[str, Any]]:
     init_db()
+    marker = param()
     with connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT id, name, formula, score, confidence, recommendation_json, request_json, created_at
             FROM saved_formulations
-            WHERE user_id = ?
+            WHERE user_id = {marker}
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT {marker}
             """,
             (user_id, limit),
         ).fetchall()
@@ -283,9 +391,10 @@ def list_formulations(user_id: int, limit: int = 80) -> list[dict[str, Any]]:
 
 def delete_formulation(user_id: int, formulation_id: int) -> bool:
     init_db()
+    marker = param()
     with connect() as conn:
         cursor = conn.execute(
-            "DELETE FROM saved_formulations WHERE user_id = ? AND id = ?",
+            f"DELETE FROM saved_formulations WHERE user_id = {marker} AND id = {marker}",
             (user_id, formulation_id),
         )
-    return cursor.rowcount > 0
+        return cursor.rowcount > 0

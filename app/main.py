@@ -156,6 +156,10 @@ def model_info():
             "count": int(len(catalog)),
             "oedb_overlap_count": int(catalog["oedb_code"].astype(str).str.len().gt(0).sum()),
         },
+        "account_storage": {
+            "backend": "postgresql" if auth_store.using_postgres() else "sqlite",
+            "persistent": bool(auth_store.using_postgres()),
+        },
         "lino3_solubility_model": {
             "available": lino3_model.available,
             "metrics": lino3_model.metrics,
