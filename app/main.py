@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import re
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
@@ -18,6 +20,7 @@ from app.schemas import AuthRequest, RecommendationRequest, SavedFormulaRequest
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "app" / "static"
+logger = logging.getLogger("ionmix.account_storage")
 
 app = FastAPI(
     title="Electrolyte Formulation Explorer",
@@ -29,11 +32,26 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 recommender = FormulationRecommender()
 
 
+def safe_database_error(exc: Exception) -> str:
+    message = str(exc)
+    database_url = auth_store.database_url()
+    if database_url:
+        message = message.replace(database_url, "[database-url-redacted]")
+    message = re.sub(
+        r"(postgres(?:ql)?://)([^:@\s]+)(?::([^@\s]*))?@",
+        r"\1[redacted]@",
+        message,
+        flags=re.IGNORECASE,
+    )
+    return f"{exc.__class__.__name__}: {message}"[:600]
+
+
 def account_storage_status() -> dict:
     backend = "postgresql" if auth_store.using_postgres() else "sqlite"
     try:
         auth_store.init_db()
-    except Exception:
+    except Exception as exc:
+        logger.warning("Account database unavailable: %s", safe_database_error(exc))
         return {
             "backend": backend,
             "persistent": False,
@@ -50,6 +68,7 @@ def ensure_account_storage() -> None:
     try:
         auth_store.init_db()
     except Exception as exc:
+        logger.warning("Account database unavailable: %s", safe_database_error(exc))
         raise HTTPException(
             status_code=503,
             detail="账户存储暂时不可用，请检查 Render 的 Supabase 数据库连接配置。",
