@@ -67,9 +67,6 @@
         <p class="target-help">这里填写的是希望达到的实验指标，不是主观权重。系统先筛选满足条件的配方；如果目标过严，会返回最接近候选并建议放宽哪些数值。</p>
 
         <div class="target-grid">
-          <label>最低溶解能力指数 / 0–100
-            <input id="solubility-target" type="number" value="0" min="0" max="100" step="1">
-          </label>
           <label>最低电导率 / mS·cm⁻¹
             <input id="conductivity-target" type="number" value="0" min="0" max="50" step="0.1">
           </label>
@@ -79,19 +76,11 @@
           <label>最低估算闪点 / °C
             <input id="flash" type="number" value="-20" min="-100" max="300" step="1">
           </label>
-          <label>最低稳定性指数 / 0–100
-            <input id="stability-target" type="number" value="0" min="0" max="100" step="1">
-          </label>
-          <label>最低安全性指数 / 0–100
-            <input id="safety-target" type="number" value="0" min="0" max="100" step="1">
-          </label>
-          <label>最低低温表现指数 / 0–100
-            <input id="low-temperature-target" type="number" value="0" min="0" max="100" step="1">
-          </label>
           <label>最低综合评分 / 0–100
             <input id="score-threshold" type="number" value="60" min="0" max="100" step="1">
           </label>
         </div>
+
         <div class="two-col">
           <label>候选组分数
             <select id="max-components">
