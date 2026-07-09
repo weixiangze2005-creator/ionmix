@@ -106,6 +106,7 @@ class RecommendationOptions:
     temperature_c: float = 25.0
     concentration: float = 1.0
     concentration_unit: str = "mol/kg"
+    min_conductivity_ms_cm: float = 0.0
     min_flash_point_c: float = -20.0
     max_mixture_viscosity: float = 6.0
     exclude_high_hazard: bool = True
@@ -254,6 +255,7 @@ class FormulationRecommender:
         transport_score = float(np.clip(log1p(transport_proxy) / 7.2, 0.0, 1.0))
 
         conductivity_score = transport_score
+        conductivity_estimate_ms_cm = conductivity_score * 15.0
 
         oxidation = sum(fraction * solvent.oxidation_prior for solvent, fraction in components)
         reduction = sum(fraction * solvent.reduction_prior for solvent, fraction in components)
@@ -274,6 +276,10 @@ class FormulationRecommender:
         )
         violations = []
         constraint_penalty = 0.0
+        if conductivity_estimate_ms_cm < options.min_conductivity_ms_cm:
+            shortfall = options.min_conductivity_ms_cm - conductivity_estimate_ms_cm
+            violations.append(f"估算电导率低于要求 {shortfall:.2f} mS/cm")
+            constraint_penalty += min(0.24, 0.04 + shortfall / 40.0)
         if flash < options.min_flash_point_c:
             shortfall = options.min_flash_point_c - flash
             violations.append(f"估算闪点低于要求 {shortfall:.1f} °C")
@@ -375,6 +381,7 @@ class FormulationRecommender:
             "properties": {
                 "solubility_score": round(solubility * 100, 1),
                 "conductivity_score": round(conductivity_score * 100, 1),
+                "conductivity_estimate_ms_cm": round(conductivity_estimate_ms_cm, 3),
                 "stability_score": round(stability * 100, 1),
                 "safety_score": round(safety * 100, 1),
                 "low_temperature_score": round(low_temp * 100, 1),
@@ -544,6 +551,24 @@ class FormulationRecommender:
         reference = selected or sorted(candidates, key=lambda item: item["score"], reverse=True)[: options.top_k]
         reference = reference[: max(1, min(len(reference), 20))]
         suggestions = []
+
+        conductivity_values = [
+            float(item.get("properties", {}).get("conductivity_estimate_ms_cm"))
+            for item in candidates
+            if item.get("properties", {}).get("conductivity_estimate_ms_cm") is not None
+        ]
+        if conductivity_values and options.min_conductivity_ms_cm > max(conductivity_values):
+            best_conductivity = max(conductivity_values)
+            suggested = _round_down(best_conductivity, 0.5)
+            suggestions.append(
+                {
+                    "parameter": "min_conductivity_ms_cm",
+                    "label": "降低最低电导率要求",
+                    "current": f"{_compact_number(options.min_conductivity_ms_cm)} mS/cm",
+                    "suggested": f"{_compact_number(suggested)} mS/cm",
+                    "reason": f"当前候选空间的估算电导率最高约 {_compact_number(best_conductivity)} mS/cm。",
+                }
+            )
 
         flash_values = [
             float(item.get("properties", {}).get("flash_point_c"))

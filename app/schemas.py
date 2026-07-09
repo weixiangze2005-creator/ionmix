@@ -18,6 +18,7 @@ class RecommendationRequest(BaseModel):
     temperature_c: float = Field(25.0, ge=-60, le=150)
     concentration: float = Field(1.0, gt=0, le=10)
     concentration_unit: str = "mol/kg"
+    min_conductivity_ms_cm: float = Field(0.0, ge=0, le=50)
     min_flash_point_c: float = Field(-20.0, ge=-100, le=300)
     max_mixture_viscosity: float = Field(6.0, gt=0, le=100)
     exclude_high_hazard: bool = True
