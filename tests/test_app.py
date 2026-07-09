@@ -31,9 +31,13 @@ def test_target_ui_uses_quantified_constraints_instead_of_percent_weights():
     assert response.status_code == 200
     html = response.text
     assert "量化目标" in html
+    assert "最低溶解能力指数" in html
     assert "最低电导率" in html
     assert "最高混合黏度" in html
     assert "最低估算闪点" in html
+    assert "最低稳定性指数" in html
+    assert "最低安全性指数" in html
+    assert "最低低温表现指数" in html
     assert "总权重 100%" not in html
     assert sum([35, 30, 15, 12, 8]) == 100
 
@@ -175,6 +179,27 @@ def test_high_conductivity_target_returns_relaxed_advice():
         item["parameter"] == "min_conductivity_ms_cm"
         for item in data["feasibility_advice"]["suggestions"]
     )
+
+
+def test_high_model_index_targets_return_relaxed_advice():
+    response = client.post(
+        "/api/recommend",
+        json={
+            "salt": "LiNO3",
+            "top_k": 5,
+            "min_solubility_score": 99,
+            "min_stability_score": 99,
+            "min_safety_score": 99,
+            "min_low_temperature_score": 99,
+            "allow_relaxed_fallback": True,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    parameters = {item["parameter"] for item in data["feasibility_advice"]["suggestions"]}
+    assert "min_solubility_score" in parameters
+    assert "min_stability_score" in parameters
+    assert "min_safety_score" in parameters
 
 
 def test_threshold_mode_can_return_ternary_candidates():

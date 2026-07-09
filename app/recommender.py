@@ -106,9 +106,13 @@ class RecommendationOptions:
     temperature_c: float = 25.0
     concentration: float = 1.0
     concentration_unit: str = "mol/kg"
+    min_solubility_score: float = 0.0
     min_conductivity_ms_cm: float = 0.0
     min_flash_point_c: float = -20.0
     max_mixture_viscosity: float = 6.0
+    min_stability_score: float = 0.0
+    min_safety_score: float = 0.0
+    min_low_temperature_score: float = 0.0
     exclude_high_hazard: bool = True
     application: str = "lithium_metal"
     top_k: int = 10
@@ -276,6 +280,14 @@ class FormulationRecommender:
         )
         violations = []
         constraint_penalty = 0.0
+        solubility_index = solubility * 100.0
+        stability_index = stability * 100.0
+        safety_index = safety * 100.0
+        low_temperature_index = low_temp * 100.0
+        if solubility_index < options.min_solubility_score:
+            shortfall = options.min_solubility_score - solubility_index
+            violations.append(f"溶解能力指数低于要求 {shortfall:.1f}")
+            constraint_penalty += min(0.24, 0.04 + shortfall / 180.0)
         if conductivity_estimate_ms_cm < options.min_conductivity_ms_cm:
             shortfall = options.min_conductivity_ms_cm - conductivity_estimate_ms_cm
             violations.append(f"估算电导率低于要求 {shortfall:.2f} mS/cm")
@@ -288,6 +300,18 @@ class FormulationRecommender:
             excess = viscosity - options.max_mixture_viscosity
             violations.append(f"估算黏度高于要求 {excess:.2f} mPa·s")
             constraint_penalty += min(0.25, 0.04 + excess / 40.0)
+        if stability_index < options.min_stability_score:
+            shortfall = options.min_stability_score - stability_index
+            violations.append(f"稳定性指数低于要求 {shortfall:.1f}")
+            constraint_penalty += min(0.20, 0.03 + shortfall / 220.0)
+        if safety_index < options.min_safety_score:
+            shortfall = options.min_safety_score - safety_index
+            violations.append(f"安全性指数低于要求 {shortfall:.1f}")
+            constraint_penalty += min(0.20, 0.03 + shortfall / 220.0)
+        if low_temperature_index < options.min_low_temperature_score:
+            shortfall = options.min_low_temperature_score - low_temperature_index
+            violations.append(f"低温表现指数低于要求 {shortfall:.1f}")
+            constraint_penalty += min(0.20, 0.03 + shortfall / 220.0)
         if options.exclude_high_hazard and max(solvent.hazard_prior for solvent in solvents) >= 0.80:
             violations.append("包含高危溶剂先验")
             constraint_penalty += 0.18
@@ -379,12 +403,12 @@ class FormulationRecommender:
             "predicted_solubility_mole_fraction": None,
             "confidence_factors": {},
             "properties": {
-                "solubility_score": round(solubility * 100, 1),
+                "solubility_score": round(solubility_index, 1),
                 "conductivity_score": round(conductivity_score * 100, 1),
                 "conductivity_estimate_ms_cm": round(conductivity_estimate_ms_cm, 3),
-                "stability_score": round(stability * 100, 1),
-                "safety_score": round(safety * 100, 1),
-                "low_temperature_score": round(low_temp * 100, 1),
+                "stability_score": round(stability_index, 1),
+                "safety_score": round(safety_index, 1),
+                "low_temperature_score": round(low_temperature_index, 1),
                 "dielectric_constant": round(dielectric, 2),
                 "viscosity_mpas": round(viscosity, 3),
                 "flash_point_c": round(flash, 1),
@@ -551,6 +575,31 @@ class FormulationRecommender:
         reference = selected or sorted(candidates, key=lambda item: item["score"], reverse=True)[: options.top_k]
         reference = reference[: max(1, min(len(reference), 20))]
         suggestions = []
+
+        score_targets = [
+            ("min_solubility_score", "solubility_score", "降低最低溶解能力指数", options.min_solubility_score, "溶解能力"),
+            ("min_stability_score", "stability_score", "降低最低稳定性指数", options.min_stability_score, "稳定性"),
+            ("min_safety_score", "safety_score", "降低最低安全性指数", options.min_safety_score, "安全性"),
+            ("min_low_temperature_score", "low_temperature_score", "降低最低低温表现指数", options.min_low_temperature_score, "低温表现"),
+        ]
+        for parameter, property_name, label, requested, display_name in score_targets:
+            values = [
+                float(item.get("properties", {}).get(property_name))
+                for item in candidates
+                if item.get("properties", {}).get(property_name) is not None
+            ]
+            if values and requested > max(values):
+                best_value = max(values)
+                suggested = _round_down(best_value, 1.0)
+                suggestions.append(
+                    {
+                        "parameter": parameter,
+                        "label": label,
+                        "current": f"{_compact_number(requested)} / 100",
+                        "suggested": f"{_compact_number(suggested)} / 100",
+                        "reason": f"当前候选空间的{display_name}指数最高约 {_compact_number(best_value)}。",
+                    }
+                )
 
         conductivity_values = [
             float(item.get("properties", {}).get("conductivity_estimate_ms_cm"))
