@@ -130,6 +130,31 @@ def test_impossible_constraints_return_relaxed_low_confidence_options():
     assert data["search_space"]["used_relaxed_fallback"] is True
     assert all(row["constraint_status"] == "relaxed" for row in data["recommendations"])
     assert all(row["constraint_violations"] for row in data["recommendations"])
+    assert data["feasibility_advice"]["suggestions"]
+    parameters = {item["parameter"] for item in data["feasibility_advice"]["suggestions"]}
+    assert {"min_flash_point_c", "max_mixture_viscosity"} <= parameters
+
+
+def test_high_score_threshold_returns_closest_candidates_with_advice():
+    response = client.post(
+        "/api/recommend",
+        json={
+            "salt": "LiNO3",
+            "top_k": 5,
+            "return_all_above_threshold": True,
+            "score_threshold": 99,
+            "max_results": 20,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["recommendations"]) == 5
+    assert data["search_space"]["used_closest_fallback"] is True
+    assert data["feasibility_advice"]["status"] == "closest"
+    assert any(
+        item["parameter"] == "score_threshold"
+        for item in data["feasibility_advice"]["suggestions"]
+    )
 
 
 def test_threshold_mode_can_return_ternary_candidates():

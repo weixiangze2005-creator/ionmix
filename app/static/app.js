@@ -307,6 +307,28 @@ function metric(label, value) {
   return `<div class="metric"><span>${label}</span><b>${value}</b></div>`;
 }
 
+function renderFeasibilityAdvice(advice) {
+  const box = document.querySelector("#feasibility-advice");
+  if (!advice || !Array.isArray(advice.suggestions) || !advice.suggestions.length) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  const rows = advice.suggestions.map(item => `
+    <div class="advice-item">
+      <div class="advice-label">${escapeHtml(item.label)}</div>
+      <div class="advice-change">${escapeHtml(item.current)} → ${escapeHtml(item.suggested)}</div>
+      <div class="advice-reason">${escapeHtml(item.reason)}</div>
+    </div>
+  `).join("");
+  box.innerHTML = `
+    <h3>${escapeHtml(advice.title || "当前目标组合过于严格")}</h3>
+    <p>${escapeHtml(advice.message || "系统已返回最接近候选，并建议放宽以下条件。")}</p>
+    <div class="advice-list">${rows}</div>
+  `;
+  box.classList.remove("hidden");
+}
+
 function renderCard(item, index) {
   const p = item.properties;
   const components = item.components || [
@@ -409,6 +431,7 @@ async function runScreening() {
   const cards = document.querySelector("#cards");
   const notice = document.querySelector("#notice");
   const pager = document.querySelector("#pager");
+  const adviceBox = document.querySelector("#feasibility-advice");
   button.disabled = true;
   empty.classList.add("hidden");
   cards.innerHTML = "";
@@ -416,6 +439,8 @@ async function runScreening() {
   currentPage = 1;
   pager.classList.add("hidden");
   notice.classList.add("hidden");
+  adviceBox.classList.add("hidden");
+  adviceBox.innerHTML = "";
   loading.classList.remove("hidden");
 
   const weights = {};
@@ -449,6 +474,7 @@ async function runScreening() {
     const data = await response.json();
     notice.textContent = data.warning;
     notice.classList.remove("hidden");
+    renderFeasibilityAdvice(data.feasibility_advice);
     document.querySelector("#search-stat").textContent =
       `${data.search_space.solvents} 种溶剂 · ${data.search_space.evaluated_formulations.toLocaleString()} 个候选 · 返回 ${data.recommendations.length} 个`;
     allRecommendations = data.recommendations;

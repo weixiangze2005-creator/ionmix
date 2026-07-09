@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import combinations, permutations
-from math import exp, log, sqrt
+from math import ceil, exp, floor, log, sqrt
 
 import numpy as np
 import pandas as pd
@@ -85,6 +85,19 @@ def _minmax(series: pd.Series, value: float, inverse: bool = False) -> float:
 
 def _sigmoid(value: float) -> float:
     return 1.0 / (1.0 + exp(-value))
+
+
+def _round_down(value: float, step: float) -> float:
+    return floor(float(value) / step) * step
+
+
+def _round_up(value: float, step: float) -> float:
+    return ceil(float(value) / step) * step
+
+
+def _compact_number(value: float) -> str:
+    rounded = round(float(value), 2)
+    return f"{rounded:g}"
 
 
 @dataclass
@@ -490,6 +503,141 @@ class FormulationRecommender:
                 break
         return selected
 
+    def _build_feasibility_advice(
+        self,
+        options: RecommendationOptions,
+        candidates: list[dict],
+        selected: list[dict],
+        feasible_count: int,
+        used_relaxed_fallback: bool,
+        used_closest_fallback: bool,
+    ) -> dict | None:
+        if not candidates:
+            return {
+                "status": "no_candidates",
+                "title": "当前输入下没有可生成的候选配方",
+                "message": "候选空间被硬性条件完全排除，请先放宽黏度、闪点或危险性限制。",
+                "suggestions": [
+                    {
+                        "parameter": "max_mixture_viscosity",
+                        "label": "提高最大黏度上限",
+                        "current": f"{_compact_number(options.max_mixture_viscosity)} mPa·s",
+                        "suggested": f"{_compact_number(max(options.max_mixture_viscosity, 4.0))} mPa·s",
+                        "reason": "过低的黏度上限会排除强溶剂化组分。",
+                    },
+                    {
+                        "parameter": "min_flash_point_c",
+                        "label": "降低最低闪点要求",
+                        "current": f"{_compact_number(options.min_flash_point_c)} ℃",
+                        "suggested": f"{_compact_number(min(options.min_flash_point_c, 70.0))} ℃",
+                        "reason": "高闪点和高盐溶解能力常常存在取舍。",
+                    },
+                ],
+            }
+
+        has_relaxed_selected = any(
+            item.get("constraint_status") == "relaxed" for item in selected
+        )
+        if feasible_count > 0 and not used_relaxed_fallback and not used_closest_fallback and not has_relaxed_selected:
+            return None
+
+        reference = selected or sorted(candidates, key=lambda item: item["score"], reverse=True)[: options.top_k]
+        reference = reference[: max(1, min(len(reference), 20))]
+        suggestions = []
+
+        flash_values = [
+            float(item.get("properties", {}).get("flash_point_c"))
+            for item in candidates
+            if item.get("properties", {}).get("flash_point_c") is not None
+        ]
+        if flash_values and options.min_flash_point_c > max(flash_values):
+            best_flash = max(flash_values)
+            suggested = _round_down(best_flash, 5.0)
+            suggestions.append(
+                {
+                    "parameter": "min_flash_point_c",
+                    "label": "降低最低闪点要求",
+                    "current": f"{_compact_number(options.min_flash_point_c)} ℃",
+                    "suggested": f"{_compact_number(suggested)} ℃",
+                    "reason": f"当前候选空间的估算闪点最高约 {_compact_number(best_flash)} ℃。",
+                }
+            )
+
+        viscosity_values = [
+            float(item.get("properties", {}).get("viscosity_mpas"))
+            for item in candidates
+            if item.get("properties", {}).get("viscosity_mpas") is not None
+        ]
+        if viscosity_values and options.max_mixture_viscosity < min(viscosity_values):
+            best_viscosity = min(viscosity_values)
+            suggested = _round_up(best_viscosity, 0.1)
+            suggestions.append(
+                {
+                    "parameter": "max_mixture_viscosity",
+                    "label": "提高最大黏度上限",
+                    "current": f"{_compact_number(options.max_mixture_viscosity)} mPa·s",
+                    "suggested": f"{_compact_number(suggested)} mPa·s",
+                    "reason": f"当前候选空间的估算黏度最低约 {_compact_number(best_viscosity)} mPa·s。",
+                }
+            )
+
+        if options.return_all_above_threshold and options.score_threshold > 0:
+            best_score = max(float(item["score"]) for item in candidates)
+            if best_score < options.score_threshold or used_closest_fallback:
+                suggested = max(0.0, _round_down(best_score, 1.0))
+                suggestions.append(
+                    {
+                        "parameter": "score_threshold",
+                        "label": "降低综合评分门槛",
+                        "current": f"{_compact_number(options.score_threshold)} 分",
+                        "suggested": f"{_compact_number(suggested)} 分",
+                        "reason": f"当前候选空间的最高综合评分约 {_compact_number(best_score)} 分。",
+                    }
+                )
+
+        high_hazard_relaxed = any(
+            any("高危" in str(violation) for violation in item.get("constraint_violations", []))
+            for item in reference
+        )
+        if options.exclude_high_hazard and high_hazard_relaxed:
+            suggestions.append(
+                {
+                    "parameter": "exclude_high_hazard",
+                    "label": "谨慎放宽高危溶剂限制",
+                    "current": "排除高危溶剂",
+                    "suggested": "仅在探索阶段允许低置信度备选",
+                    "reason": "部分高溶解能力候选含高危溶剂；实际实验仍不建议直接放宽安全要求。",
+                }
+            )
+
+        if not suggestions and used_relaxed_fallback:
+            suggestions.append(
+                {
+                    "parameter": "constraints",
+                    "label": "整体放宽硬性约束",
+                    "current": "当前约束组合",
+                    "suggested": "优先放宽单项最苛刻条件",
+                    "reason": "满足全部约束的候选不足，系统已返回最接近的低置信度备选。",
+                }
+            )
+
+        title = (
+            "当前评分门槛过高，已显示最接近配方"
+            if used_closest_fallback
+            else "当前目标组合过于严格，已显示最接近配方"
+        )
+        message = (
+            "数据库中没有同时满足这些条件且达到评分门槛的配方。"
+            if used_closest_fallback
+            else "数据库中满足全部硬性条件的候选不足；下面结果包含放宽约束后的低置信度备选。"
+        )
+        return {
+            "status": "closest" if used_closest_fallback else "relaxed",
+            "title": title,
+            "message": message,
+            "suggestions": suggestions[:4],
+        }
+
     def recommend(self, options: RecommendationOptions) -> dict:
         salt = canonical_salt(options.salt)
         candidates = self._generate_candidates(salt, options, relaxed=False)
@@ -659,8 +807,12 @@ class FormulationRecommender:
                 item["basis"] = item["basis"] + " + OEDB-MD 辅助模型"
 
         candidates.sort(key=lambda item: item["score"], reverse=True)
+        used_closest_fallback = False
         if options.return_all_above_threshold:
             threshold = float(options.score_threshold)
+            best_per_formula_all = {}
+            for item in candidates:
+                best_per_formula_all.setdefault(item["formula_key"], item)
             best_per_formula = {}
             for item in candidates:
                 if item["score"] < threshold:
@@ -671,12 +823,28 @@ class FormulationRecommender:
                 key=lambda item: (item["score"], item["confidence"]),
                 reverse=True,
             )[: options.max_results]
+            if not selected and best_per_formula_all:
+                selected = sorted(
+                    best_per_formula_all.values(),
+                    key=lambda item: (item["score"], item["confidence"]),
+                    reverse=True,
+                )[: min(options.top_k, options.max_results)]
+                used_closest_fallback = True
         else:
             selected = self._select_diverse(candidates, options.top_k)
             selected.sort(
                 key=lambda item: (item["score"], item["confidence"]),
                 reverse=True,
             )
+
+        feasibility_advice = self._build_feasibility_advice(
+            options=options,
+            candidates=candidates,
+            selected=selected,
+            feasible_count=feasible_count,
+            used_relaxed_fallback=used_relaxed_fallback,
+            used_closest_fallback=used_closest_fallback,
+        )
 
         for item in selected:
             for key in (
@@ -736,6 +904,7 @@ class FormulationRecommender:
                 else ""
             ),
             "recommendations": selected,
+            "feasibility_advice": feasibility_advice,
             "search_space": {
                 "solvents": len(self.catalog),
                 "ratios_per_pair": 17,
@@ -746,6 +915,7 @@ class FormulationRecommender:
                 "evaluated_formulations": len(candidates),
                 "feasible_formulations": feasible_count,
                 "used_relaxed_fallback": used_relaxed_fallback,
+                "used_closest_fallback": used_closest_fallback,
             },
         }
 
