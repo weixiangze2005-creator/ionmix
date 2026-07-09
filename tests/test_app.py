@@ -1,4 +1,4 @@
-﻿import os
+import os
 
 os.environ["IONMIX_CONDUCTIVITY_MODEL"] = "enabled"
 
@@ -26,20 +26,19 @@ def test_health_and_model():
     assert info["oedb_auxiliary_model"]["metrics"]["training_summary"]["rows"] == 5616
     assert "LiPF6" in info["oedb_auxiliary_model"]["supported_salts"]
 
-def test_target_ui_uses_quantified_constraints_instead_of_percent_weights():
+
+def test_weight_ui_explains_and_starts_at_one_hundred_percent():
     response = client.get("/")
     assert response.status_code == 200
     html = response.text
-    assert "量化目标" in html
-    assert "最低电导率" in html
-    assert "最高混合黏度" in html
-    assert "最低估算闪点" in html
-    assert "总权重 100%" not in html
+    assert "总权重 100%" in html
+    assert "总和始终为 100%" in html
+    assert "上方已选权重保持不变" in html
     assert sum([35, 30, 15, 12, 8]) == 100
 
 
 def test_salt_alias():
-    assert canonical_salt("lino3") == "LiNO3"
+    assert canonical_salt("硝酸锂") == "LiNO3"
     assert canonical_salt(" lipf6 ") == "LiPF6"
 
 
@@ -154,25 +153,6 @@ def test_high_score_threshold_returns_closest_candidates_with_advice():
     assert data["feasibility_advice"]["status"] == "closest"
     assert any(
         item["parameter"] == "score_threshold"
-        for item in data["feasibility_advice"]["suggestions"]
-    )
-
-
-def test_high_conductivity_target_returns_relaxed_advice():
-    response = client.post(
-        "/api/recommend",
-        json={
-            "salt": "LiNO3",
-            "top_k": 5,
-            "min_conductivity_ms_cm": 40,
-            "allow_relaxed_fallback": True,
-        },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["search_space"]["used_relaxed_fallback"] is True
-    assert any(
-        item["parameter"] == "min_conductivity_ms_cm"
         for item in data["feasibility_advice"]["suggestions"]
     )
 

@@ -248,7 +248,6 @@ def recommend(request: RecommendationRequest):
         temperature_c=request.temperature_c,
         concentration=request.concentration,
         concentration_unit=request.concentration_unit,
-        min_conductivity_ms_cm=request.min_conductivity_ms_cm,
         min_flash_point_c=request.min_flash_point_c,
         max_mixture_viscosity=request.max_mixture_viscosity,
         exclude_high_hazard=request.exclude_high_hazard,

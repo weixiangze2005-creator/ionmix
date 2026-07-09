@@ -59,27 +59,13 @@
         </label>
 
         <div class="section-divider"></div>
-        <div class="section-number">02 / TARGETS</div>
-        <div class="target-heading">
-          <h3>量化目标</h3>
-          <span>硬性条件 + 最接近建议</span>
+        <div class="section-number">02 / PRIORITIZE</div>
+        <div class="weight-heading">
+          <h3>目标权重</h3>
+          <span id="weight-total">总权重 100%</span>
         </div>
-        <p class="target-help">这里填写的是希望达到的实验指标，不是主观权重。系统先筛选满足条件的配方；如果目标过严，会返回最接近候选并建议放宽哪些数值。</p>
-
-        <div class="target-grid">
-          <label>最低电导率 / mS·cm⁻¹
-            <input id="conductivity-target" type="number" value="0" min="0" max="50" step="0.1">
-          </label>
-          <label>最高混合黏度 / mPa·s
-            <input id="viscosity" type="number" value="6" min="0.1" max="100" step="0.1">
-          </label>
-          <label>最低估算闪点 / °C
-            <input id="flash" type="number" value="-20" min="-100" max="300" step="1">
-          </label>
-          <label>最低综合评分 / 0–100
-            <input id="score-threshold" type="number" value="60" min="0" max="100" step="1">
-          </label>
-        </div>
+        <p class="weight-help">权重按从上到下的顺序锁定。调整某一项时，上方已选权重保持不变，仅下方项目自动分配剩余比例；总和始终为 100%。</p>
+        <div id="weights"></div>
 
         <div class="two-col">
           <label>候选组分数
@@ -88,15 +74,24 @@
               <option value="3">最多 3 种溶剂</option>
             </select>
           </label>
-          <label class="check target-check"><input id="hazard" type="checkbox" checked> 排除高危溶剂</label>
+          <label>最低综合评分
+            <input id="score-threshold" type="number" value="60" min="0" max="100" step="1">
+          </label>
         </div>
 
         <details>
-          <summary>排序策略说明</summary>
+          <summary>实验与安全约束</summary>
           <div class="detail-grid">
-            <p class="target-help">排序偏好由应用场景自动设置：锂金属更重视还原稳定性与溶盐能力，高电压更重视氧化稳定性，均衡体系兼顾传输、安全和低温表现。</p>
+            <label>最低估算闪点 / °C
+              <input id="flash" type="number" value="-20">
+            </label>
+            <label>最高混合黏度 / mPa·s
+              <input id="viscosity" type="number" value="6" min="0.1" step="0.1">
+            </label>
+            <label class="check"><input id="hazard" type="checkbox" checked> 排除高危溶剂先验</label>
           </div>
         </details>
+
         <button id="run">开始筛选 <span>→</span></button>
         <p class="microcopy">输出是实验起点，不替代溶解度、电化学窗口与电池验证。</p>
       </aside>

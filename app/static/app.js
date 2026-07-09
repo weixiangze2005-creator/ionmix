@@ -1,36 +1,99 @@
+const weightConfig = [
+  ["solubility", "溶解能力", 35],
+  ["conductivity", "离子传输", 30],
+  ["stability", "电化学稳定", 15],
+  ["safety", "安全性", 12],
+  ["low_temperature", "低温表现", 8],
+];
+
+const weightContainer = document.querySelector("#weights");
+weightConfig.forEach(([key, label, value]) => {
+  weightContainer.insertAdjacentHTML("beforeend", `
+    <div class="weight-row">
+      <span>${label}</span>
+      <input type="range" id="w-${key}" min="0" max="100" value="${value}">
+      <input class="weight-number" type="number" id="n-${key}" min="0" max="100" value="${value}">
+      <b class="weight-value" id="v-${key}">%</b>
+    </div>`);
+});
+
+let adjustingWeights = false;
 let allRecommendations = [];
 let currentPage = 1;
 const pageSize = 10;
 let currentUser = null;
 let lastRequestBody = null;
 
-const scenarioWeights = {
-  lithium_metal: {
-    solubility: 0.34,
-    conductivity: 0.24,
-    stability: 0.22,
-    safety: 0.12,
-    low_temperature: 0.08,
-  },
-  high_voltage: {
-    solubility: 0.24,
-    conductivity: 0.24,
-    stability: 0.30,
-    safety: 0.14,
-    low_temperature: 0.08,
-  },
-  balanced: {
-    solubility: 0.28,
-    conductivity: 0.26,
-    stability: 0.18,
-    safety: 0.16,
-    low_temperature: 0.12,
-  },
-};
-
-function currentScenarioWeights() {
-  return scenarioWeights[document.querySelector("#application").value] || scenarioWeights.balanced;
+function largestRemainder(values, targetTotal) {
+  const floors = values.map(Math.floor);
+  let remainder = targetTotal - floors.reduce((sum, value) => sum + value, 0);
+  const order = values
+    .map((value, index) => ({index, fraction: value - floors[index]}))
+    .sort((a, b) => b.fraction - a.fraction);
+  for (let i = 0; i < remainder; i += 1) floors[order[i].index] += 1;
+  return floors;
 }
+
+function updateWeightDisplay() {
+  let total = 0;
+  weightConfig.forEach(([key]) => {
+    const value = Number(document.querySelector(`#w-${key}`).value);
+    total += value;
+    document.querySelector(`#n-${key}`).value = value;
+    document.querySelector(`#v-${key}`).textContent = "%";
+  });
+  const totalBadge = document.querySelector("#weight-total");
+  totalBadge.textContent = `总权重 ${total}%`;
+  totalBadge.classList.toggle("invalid", total !== 100);
+}
+
+function rebalanceWeights(changedKey, requestedValue) {
+  if (adjustingWeights) return;
+  adjustingWeights = true;
+  const keys = weightConfig.map(([key]) => key);
+  const changedIndex = keys.indexOf(changedKey);
+  const upperKeys = keys.slice(0, changedIndex);
+  const lowerKeys = keys.slice(changedIndex + 1);
+  const upperTotal = upperKeys.reduce(
+    (sum, key) => sum + Number(document.querySelector(`#w-${key}`).value),
+    0,
+  );
+  const maximumCurrent = Math.max(0, 100 - upperTotal);
+
+  // The final slider represents the exact remainder after all choices above it.
+  // Dragging it therefore snaps back to the available remainder.
+  const changedValue = lowerKeys.length === 0
+    ? maximumCurrent
+    : Math.max(0, Math.min(maximumCurrent, Number(requestedValue)));
+  document.querySelector(`#w-${changedKey}`).value = changedValue;
+
+  const remaining = maximumCurrent - changedValue;
+  if (lowerKeys.length > 0) {
+    const lowerValues = lowerKeys.map(
+      key => Number(document.querySelector(`#w-${key}`).value),
+    );
+    const lowerTotal = lowerValues.reduce((sum, value) => sum + value, 0);
+    const rawValues = lowerTotal > 0
+      ? lowerValues.map(value => value / lowerTotal * remaining)
+      : lowerValues.map(() => remaining / lowerValues.length);
+    const balanced = largestRemainder(rawValues, remaining);
+    lowerKeys.forEach((key, index) => {
+      document.querySelector(`#w-${key}`).value = balanced[index];
+    });
+  }
+  updateWeightDisplay();
+  adjustingWeights = false;
+}
+
+weightConfig.forEach(([key]) => {
+  document.querySelector(`#w-${key}`).addEventListener("input", event => {
+    rebalanceWeights(key, event.target.value);
+  });
+  document.querySelector(`#n-${key}`).addEventListener("change", event => {
+    rebalanceWeights(key, event.target.value);
+  });
+});
+updateWeightDisplay();
 
 async function loadModelInfo() {
   try {
@@ -294,10 +357,8 @@ function renderCard(item, index) {
   const confidenceFactors = Object.entries(item.confidence_factors || {})
     .map(([key, value]) => `<span class="confidence-factor">${factorLabels[key] || key} ${Math.round(value * 100)}%</span>`)
     .join("");
-  const conductivity = item.predicted_conductivity === null
-    ? `${p.conductivity_estimate_ms_cm} mS/cm`
-    : `${item.predicted_conductivity} mS/cm`;
-  const conductivityLabel = item.predicted_conductivity === null ? "估算电导率" : "预测电导率";
+  const conductivity = item.predicted_conductivity === null ? p.conductivity_score : item.predicted_conductivity;
+  const conductivityLabel = item.predicted_conductivity === null ? "离子传输评分" : "预测电导率";
   const viscosityLabel = p.oedb_viscosity_mpas === undefined ? "混合黏度" : "OEDB-MD 黏度";
   const viscosityValue = p.oedb_viscosity_mpas === undefined
     ? `${p.viscosity_mpas} mPa·s`
@@ -382,13 +443,14 @@ async function runScreening() {
   adviceBox.innerHTML = "";
   loading.classList.remove("hidden");
 
+  const weights = {};
+  weightConfig.forEach(([key]) => weights[key] = Number(document.querySelector(`#w-${key}`).value) / 100);
   const body = {
     salt: document.querySelector("#salt").value,
     temperature_c: Number(document.querySelector("#temperature").value),
     concentration: Number(document.querySelector("#concentration").value),
     concentration_unit: "mol/kg",
     application: document.querySelector("#application").value,
-    min_conductivity_ms_cm: Number(document.querySelector("#conductivity-target").value),
     min_flash_point_c: Number(document.querySelector("#flash").value),
     max_mixture_viscosity: Number(document.querySelector("#viscosity").value),
     exclude_high_hazard: document.querySelector("#hazard").checked,
@@ -398,7 +460,7 @@ async function runScreening() {
     max_components: Number(document.querySelector("#max-components").value),
     return_all_above_threshold: true,
     allow_relaxed_fallback: true,
-    weights: currentScenarioWeights(),
+    weights,
   };
   lastRequestBody = body;
 
