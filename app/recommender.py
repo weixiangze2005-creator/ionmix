@@ -468,6 +468,115 @@ class FormulationRecommender:
         return candidates
 
     @staticmethod
+    def _candidate_identity(item: dict) -> tuple:
+        return tuple(
+            (component["code"], int(component["ratio"]))
+            for component in item.get("components", [])
+        )
+
+    def _model_refinement_pool(
+        self,
+        candidates: list[dict],
+        options: RecommendationOptions,
+    ) -> list[dict]:
+        """Keep model inference bounded while retaining goal-specific outliers.
+
+        The physical/heuristic pass still evaluates the complete search space.
+        Expensive learned models then refine a wide, score-aware union instead of
+        every low-ranked ratio.  Goal-specific slices protect candidates that a
+        learned correction may promote strongly for one objective.
+        """
+        if not candidates:
+            return []
+        base_limit = max(2200, options.max_results * 28, options.top_k * 180)
+        if options.max_components >= 3:
+            base_limit = max(base_limit, 4200)
+        limit = min(len(candidates), base_limit)
+        if limit >= len(candidates):
+            return list(candidates)
+
+        ranked = sorted(candidates, key=lambda item: item["score"], reverse=True)
+        selected: dict[tuple, dict] = {
+            self._candidate_identity(item): item for item in ranked[:limit]
+        }
+        # Add compact objective-specific guard bands. These are especially useful
+        # when the user's dominant weight is changed between consecutive searches.
+        goal_columns = (
+            "solubility_score",
+            "conductivity_score",
+            "stability_score",
+            "safety_score",
+            "low_temperature_score",
+        )
+        guard_size = min(180, max(60, options.max_results * 2))
+        for column in goal_columns:
+            goal_ranked = sorted(
+                candidates,
+                key=lambda item: item["properties"].get(column, 0.0),
+                reverse=True,
+            )[:guard_size]
+            for item in goal_ranked:
+                selected.setdefault(self._candidate_identity(item), item)
+        return sorted(selected.values(), key=lambda item: item["score"], reverse=True)
+
+    @staticmethod
+    def _enrich_explanation(item: dict, options: RecommendationOptions) -> None:
+        weights = {
+            key: max(0.0, float((options.weights or {}).get(key, default)))
+            for key, default in DEFAULT_WEIGHTS.items()
+        }
+        weight_sum = sum(weights.values()) or 1.0
+        labels = {
+            "solubility": "溶解能力",
+            "conductivity": "离子传输",
+            "stability": "电化学稳定",
+            "safety": "安全性",
+            "low_temperature": "低温表现",
+        }
+        properties = item.get("properties", {})
+        contributions = {}
+        for key in labels:
+            property_score = float(properties.get(f"{key}_score", 0.0))
+            contribution = property_score * weights[key] / weight_sum
+            contributions[key] = {
+                "label": labels[key],
+                "property_score": round(property_score, 1),
+                "weight_percent": round(weights[key] / weight_sum * 100.0, 1),
+                "contribution": round(contribution, 1),
+            }
+        contribution_total = sum(value["contribution"] for value in contributions.values())
+        adjustment = round(float(item["score"]) - contribution_total, 1)
+        dominant = max(
+            contributions,
+            key=lambda key: contributions[key]["contribution"],
+        )
+        item["score_breakdown"] = {
+            "targets": contributions,
+            "adjustment": adjustment,
+            "dominant_goal": dominant,
+            "dominant_goal_label": labels[dominant],
+        }
+
+        confidence = float(item.get("confidence", 0.0))
+        if confidence >= 72:
+            level, label = "high", "较高"
+        elif confidence >= 48:
+            level, label = "medium", "中等"
+        else:
+            level, label = "low", "较低"
+        item["confidence_level"] = level
+        item["confidence_label"] = label
+        basis = str(item.get("basis", ""))
+        evidence = []
+        if "公开实验模型" in basis or "CALiSol" in basis or "实测溶解度" in basis:
+            evidence.append("实验数据模型")
+        if "OEDB-MD" in basis:
+            evidence.append("分子动力学辅助")
+        if "启发式" in basis or "分子描述符" in basis:
+            evidence.append("物理启发式")
+        item["evidence_tags"] = evidence or ["物理约束筛选"]
+
+    @staticmethod
     def _select_diverse(candidates: list[dict], top_k: int) -> list[dict]:
         """Keep the list useful instead of letting one solvent occupy every row."""
         best_per_pair = {}
@@ -523,6 +632,7 @@ class FormulationRecommender:
                         "label": "提高最大黏度上限",
                         "current": f"{_compact_number(options.max_mixture_viscosity)} mPa·s",
                         "suggested": f"{_compact_number(max(options.max_mixture_viscosity, 4.0))} mPa·s",
+                        "suggested_value": max(options.max_mixture_viscosity, 4.0),
                         "reason": "过低的黏度上限会排除强溶剂化组分。",
                     },
                     {
@@ -530,6 +640,7 @@ class FormulationRecommender:
                         "label": "降低最低闪点要求",
                         "current": f"{_compact_number(options.min_flash_point_c)} ℃",
                         "suggested": f"{_compact_number(min(options.min_flash_point_c, 70.0))} ℃",
+                        "suggested_value": min(options.min_flash_point_c, 70.0),
                         "reason": "高闪点和高盐溶解能力常常存在取舍。",
                     },
                 ],
@@ -559,6 +670,7 @@ class FormulationRecommender:
                     "label": "降低最低闪点要求",
                     "current": f"{_compact_number(options.min_flash_point_c)} ℃",
                     "suggested": f"{_compact_number(suggested)} ℃",
+                    "suggested_value": suggested,
                     "reason": f"当前候选空间的估算闪点最高约 {_compact_number(best_flash)} ℃。",
                 }
             )
@@ -577,6 +689,7 @@ class FormulationRecommender:
                     "label": "提高最大黏度上限",
                     "current": f"{_compact_number(options.max_mixture_viscosity)} mPa·s",
                     "suggested": f"{_compact_number(suggested)} mPa·s",
+                    "suggested_value": suggested,
                     "reason": f"当前候选空间的估算黏度最低约 {_compact_number(best_viscosity)} mPa·s。",
                 }
             )
@@ -591,6 +704,7 @@ class FormulationRecommender:
                         "label": "降低综合评分门槛",
                         "current": f"{_compact_number(options.score_threshold)} 分",
                         "suggested": f"{_compact_number(suggested)} 分",
+                        "suggested_value": suggested,
                         "reason": f"当前候选空间的最高综合评分约 {_compact_number(best_score)} 分。",
                     }
                 )
@@ -657,12 +771,7 @@ class FormulationRecommender:
                 item["constraint_status"] == "relaxed" for item in candidates
             )
 
-        model_pool_size = (
-            len(candidates)
-            if options.return_all_above_threshold
-            else min(len(candidates), max(1200, options.top_k * 160))
-        )
-        model_candidates = sorted(candidates, key=lambda item: item["score"], reverse=True)[:model_pool_size]
+        model_candidates = self._model_refinement_pool(candidates, options)
 
         if salt == "LiNO3" and self.lino3_model.available:
             lino3_predictions = self.lino3_model.predict_many(
@@ -847,6 +956,7 @@ class FormulationRecommender:
         )
 
         for item in selected:
+            self._enrich_explanation(item, options)
             for key in (
                 "_transport_score",
                 "_heuristic_solubility_score",
@@ -876,6 +986,17 @@ class FormulationRecommender:
             oedb_warning = " OEDB-MD 当前不覆盖这个盐/阴离子，所以不会显示模拟黏度、密度或扩散系数。"
         elif oedb_supported:
             oedb_warning = " OEDB-MD 已作为低权重辅助模型参与黏度、密度和扩散趋势估计。"
+        confidence_values = [float(item["confidence"]) for item in selected]
+        score_values = [float(item["score"]) for item in selected]
+        result_summary = {
+            "count": len(selected),
+            "strict_count": sum(item["constraint_status"] == "feasible" for item in selected),
+            "relaxed_count": sum(item["constraint_status"] == "relaxed" for item in selected),
+            "oedb_count": sum("OEDB-MD" in item.get("basis", "") for item in selected),
+            "top_score": max(score_values) if score_values else None,
+            "lowest_score": min(score_values) if score_values else None,
+            "median_confidence": round(float(np.median(confidence_values)), 1) if confidence_values else None,
+        }
         return {
             "salt": salt,
             "salt_smiles": SALT_SMILES.get(salt),
@@ -904,6 +1025,7 @@ class FormulationRecommender:
                 else ""
             ),
             "recommendations": selected,
+            "result_summary": result_summary,
             "feasibility_advice": feasibility_advice,
             "search_space": {
                 "solvents": len(self.catalog),
@@ -913,6 +1035,7 @@ class FormulationRecommender:
                 "returned_formulations": len(selected),
                 "return_all_above_threshold": options.return_all_above_threshold,
                 "evaluated_formulations": len(candidates),
+                "model_refined_formulations": len(model_candidates),
                 "feasible_formulations": feasible_count,
                 "used_relaxed_fallback": used_relaxed_fallback,
                 "used_closest_fallback": used_closest_fallback,

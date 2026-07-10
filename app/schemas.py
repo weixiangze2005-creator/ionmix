@@ -28,7 +28,7 @@ class RecommendationRequest(BaseModel):
     max_components: int = Field(2, ge=2, le=3)
     return_all_above_threshold: bool = False
     allow_relaxed_fallback: bool = True
-    weights: WeightInput = WeightInput()
+    weights: WeightInput = Field(default_factory=WeightInput)
 
 
 class AuthRequest(BaseModel):

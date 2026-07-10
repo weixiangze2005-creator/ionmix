@@ -65,6 +65,12 @@
           <span id="weight-total">总权重 100%</span>
         </div>
         <p class="weight-help">权重按从上到下的顺序锁定。调整某一项时，上方已选权重保持不变，仅下方项目自动分配剩余比例；总和始终为 100%。</p>
+        <div class="weight-presets" aria-label="常用目标权重">
+          <button type="button" data-preset="balanced">均衡</button>
+          <button type="button" data-preset="solubility">优先溶解</button>
+          <button type="button" data-preset="transport">优先传输</button>
+          <button type="button" data-preset="safety">优先安全</button>
+        </div>
         <div id="weights"></div>
 
         <div class="two-col">
@@ -102,18 +108,19 @@
             <div class="section-number">03 / RANK</div>
             <h2>候选配方</h2>
           </div>
-          <div class="search-stat" id="search-stat">等待运行</div>
+          <div class="search-stat"><span>按综合评分排序</span><b id="search-stat">等待运行</b></div>
         </div>
+        <div id="result-summary" class="result-summary hidden" aria-live="polite"></div>
         <div id="notice" class="notice hidden"></div>
         <div id="feasibility-advice" class="feasibility-advice hidden"></div>
         <div id="loading" class="loading hidden">
           <div class="orb"></div>
-          <p>正在搜索组合与配比…</p>
+          <p id="loading-stage">正在生成候选组合…</p>
+          <span id="loading-time">已用时 0 秒</span>
         </div>
         <div id="empty" class="empty">
-          <div class="molecule-art"><span></span><span></span><span></span><span></span></div>
           <h3>准备探索候选空间</h3>
-          <p>系统将比较溶剂化能力、传输、稳定性、安全性和低温表现。</p>
+          <p>设置左侧目标后运行筛选，这里会按综合评分展示候选配方。</p>
         </div>
         <div id="cards" class="cards"></div>
         <div id="pager" class="pager hidden">

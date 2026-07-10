@@ -6,6 +6,14 @@ const weightConfig = [
   ["low_temperature", "低温表现", 8],
 ];
 
+const weightPresets = {
+  balanced: [30, 30, 15, 15, 10],
+  solubility: [55, 20, 10, 10, 5],
+  transport: [20, 55, 10, 10, 5],
+  safety: [20, 15, 10, 45, 10],
+};
+const settingsKey = "ionmix-screening-settings-v2";
+
 const weightContainer = document.querySelector("#weights");
 weightConfig.forEach(([key, label, value]) => {
   weightContainer.insertAdjacentHTML("beforeend", `
@@ -23,6 +31,8 @@ let currentPage = 1;
 const pageSize = 10;
 let currentUser = null;
 let lastRequestBody = null;
+let activeRequestController = null;
+let loadingTimer = null;
 
 function largestRemainder(values, targetTotal) {
   const floors = values.map(Math.floor);
@@ -45,6 +55,13 @@ function updateWeightDisplay() {
   const totalBadge = document.querySelector("#weight-total");
   totalBadge.textContent = `总权重 ${total}%`;
   totalBadge.classList.toggle("invalid", total !== 100);
+}
+
+function setWeights(values) {
+  weightConfig.forEach(([key], index) => {
+    document.querySelector(`#w-${key}`).value = values[index];
+  });
+  updateWeightDisplay();
 }
 
 function rebalanceWeights(changedKey, requestedValue) {
@@ -95,6 +112,60 @@ weightConfig.forEach(([key]) => {
 });
 updateWeightDisplay();
 
+document.querySelectorAll("[data-preset]").forEach(button => {
+  button.addEventListener("click", () => {
+    setWeights(weightPresets[button.dataset.preset]);
+    document.querySelectorAll("[data-preset]").forEach(item => item.classList.remove("active"));
+    button.classList.add("active");
+    saveSettings();
+  });
+});
+
+function saveSettings() {
+  const values = {
+    salt: document.querySelector("#salt").value,
+    temperature: document.querySelector("#temperature").value,
+    concentration: document.querySelector("#concentration").value,
+    application: document.querySelector("#application").value,
+    maxComponents: document.querySelector("#max-components").value,
+    scoreThreshold: document.querySelector("#score-threshold").value,
+    flash: document.querySelector("#flash").value,
+    viscosity: document.querySelector("#viscosity").value,
+    hazard: document.querySelector("#hazard").checked,
+    weights: weightConfig.map(([key]) => Number(document.querySelector(`#w-${key}`).value)),
+  };
+  localStorage.setItem(settingsKey, JSON.stringify(values));
+}
+
+function restoreSettings() {
+  try {
+    const values = JSON.parse(localStorage.getItem(settingsKey) || "null");
+    if (!values) return;
+    const fields = {
+      salt: "salt",
+      temperature: "temperature",
+      concentration: "concentration",
+      application: "application",
+      maxComponents: "max-components",
+      scoreThreshold: "score-threshold",
+      flash: "flash",
+      viscosity: "viscosity",
+    };
+    Object.entries(fields).forEach(([key, id]) => {
+      if (values[key] !== undefined) document.querySelector(`#${id}`).value = values[key];
+    });
+    if (typeof values.hazard === "boolean") document.querySelector("#hazard").checked = values.hazard;
+    if (Array.isArray(values.weights) && values.weights.length === weightConfig.length
+      && values.weights.reduce((sum, value) => sum + Number(value), 0) === 100) {
+      setWeights(values.weights);
+    }
+  } catch {
+    localStorage.removeItem(settingsKey);
+  }
+}
+
+restoreSettings();
+
 async function loadModelInfo() {
   try {
     const response = await fetch("/api/model-info");
@@ -108,16 +179,16 @@ async function loadModelInfo() {
     const oedb = info.oedb_auxiliary_model;
     const oedbRows = oedb?.metrics?.training_summary?.rows || 0;
     const solventCount = info.solvent_catalog?.count || 0;
-    const solventText = solventCount ? ` · 候选溶剂 ${solventCount} 种` : "";
     const account = info.account_storage || {};
     const accountText = account.available
-      ? (account.backend === "postgresql" ? "账户云端存储" : "账户本地存储")
-      : "账户存储待配置";
+      ? (account.backend === "postgresql" ? "云端账户" : "本地账户")
+      : "账户待配置";
     pill.classList.toggle("degraded", !account.available);
     if (mixture?.available) {
       pill.textContent = oedb?.available
-        ? `配方模型在线 · 公开实验 ${mixtureRows.toLocaleString()} 条 · OEDB-MD ${oedbRows.toLocaleString()} 条 · LiNO₃ 二元 ${lino3BinaryRows} 条${solventText} · ${accountText}`
-        : `配方模型在线 · 公开实验 ${mixtureRows.toLocaleString()} 条 · LiNO₃ 二元 ${lino3BinaryRows} 条${solventText} · ${accountText}`;
+        ? `模型在线 · ${mixtureRows.toLocaleString()} 实验 · ${oedbRows.toLocaleString()} 模拟 · ${solventCount} 溶剂 · ${accountText}`
+        : `模型在线 · ${mixtureRows.toLocaleString()} 实验 · ${solventCount} 溶剂 · ${accountText}`;
+      pill.title = `公开实验 ${mixtureRows.toLocaleString()} 条；OEDB-MD ${oedbRows.toLocaleString()} 条；LiNO₃ 二元标签 ${lino3BinaryRows} 条；候选溶剂 ${solventCount} 种。`;
     } else if (info.available) {
       pill.textContent = `模型在线 · 电导率 ${info.metrics.train_rows.toLocaleString()} 条 · LiNO₃ 溶解度 ${lino3Rows} 条 · ${accountText}`;
     } else if (lino3Rows > 0) {
@@ -324,6 +395,7 @@ function renderFeasibilityAdvice(advice) {
       <div class="advice-label">${escapeHtml(item.label)}</div>
       <div class="advice-change">${escapeHtml(item.current)} → ${escapeHtml(item.suggested)}</div>
       <div class="advice-reason">${escapeHtml(item.reason)}</div>
+      ${item.suggested_value === undefined ? "" : `<button class="apply-advice" type="button" data-advice-parameter="${escapeHtml(item.parameter)}" data-advice-value="${escapeHtml(item.suggested_value)}">采用</button>`}
     </div>
   `).join("");
   box.innerHTML = `
@@ -334,23 +406,61 @@ function renderFeasibilityAdvice(advice) {
   box.classList.remove("hidden");
 }
 
+function applyAdvice(parameter, value) {
+  const fieldMap = {
+    min_flash_point_c: "flash",
+    max_mixture_viscosity: "viscosity",
+    score_threshold: "score-threshold",
+  };
+  const field = fieldMap[parameter];
+  if (!field) return;
+  document.querySelector(`#${field}`).value = value;
+  saveSettings();
+  runScreening();
+}
+
+function confidenceText(item) {
+  const labels = {high: "较高", medium: "中等", low: "较低"};
+  return labels[item.confidence_level] || item.confidence_label || "参考";
+}
+
+function renderScoreBreakdown(item) {
+  const targets = Object.values(item.score_breakdown?.targets || {});
+  if (!targets.length) return "";
+  const rows = targets.map(target => `
+    <div class="breakdown-row">
+      <span>${escapeHtml(target.label)} <small>权重 ${target.weight_percent}%</small></span>
+      <i><b style="width:${Math.max(0, Math.min(100, target.property_score))}%"></b></i>
+      <strong>+${Number(target.contribution).toFixed(1)}</strong>
+    </div>
+  `).join("");
+  const adjustment = Number(item.score_breakdown.adjustment || 0);
+  return `
+    <details class="score-explain">
+      <summary>为什么是 ${item.score} 分 · 主要由${escapeHtml(item.score_breakdown.dominant_goal_label)}贡献</summary>
+      <div class="breakdown-list">${rows}</div>
+      ${Math.abs(adjustment) < 0.05 ? "" : `<p>物态、互补性与约束修正：${adjustment > 0 ? "+" : ""}${adjustment.toFixed(1)} 分</p>`}
+      <p>置信度表示数据覆盖与模型一致性，不参与综合评分排序。</p>
+    </details>`;
+}
+
 function renderCard(item, index) {
   const p = item.properties;
   const components = item.components || [
     {code: item.solvent_a, name: item.solvent_a_name, ratio: item.ratio_a},
     {code: item.solvent_b, name: item.solvent_b_name, ratio: item.ratio_b},
   ];
-  const formula = components.map(component => component.code).join(" + ");
-  const names = components.map(component => component.name).join(" / ");
+  const formula = components.map(component => escapeHtml(component.code)).join(" + ");
+  const names = components.map(component => escapeHtml(component.name)).join(" / ");
   const ratioSegments = components
     .map(component => `<i style="width:${component.ratio}%"></i>`)
     .join("");
   const ratioLabels = components
-    .map(component => `<span>${component.code} ${component.ratio}%</span>`)
+    .map(component => `<span>${escapeHtml(component.code)} ${component.ratio}%</span>`)
     .join("");
-  const reasons = item.reasons.map(x => `<span class="reason">${x}</span>`).join("");
+  const reasons = item.reasons.map(x => `<span class="reason">${escapeHtml(x)}</span>`).join("");
   const violations = (item.constraint_violations || [])
-    .map(x => `<span class="reason violation">${x}</span>`).join("");
+    .map(x => `<span class="reason violation">${escapeHtml(x)}</span>`).join("");
   const factorLabels = {
     domain_similarity: "训练域相似",
     ensemble_agreement: "模型一致",
@@ -358,9 +468,14 @@ function renderCard(item, index) {
     temperature_coverage: "温度覆盖",
     component_coverage: "溶剂覆盖",
     physics_model_agreement: "机理一致",
+    mixture_conductivity_domain: "电导训练域",
+    mixture_solubility_domain: "溶解训练域",
+    mixture_model_domain_mean: "配方训练域",
+    oedb_md_coverage: "OEDB 覆盖",
   };
   const confidenceFactors = Object.entries(item.confidence_factors || {})
-    .map(([key, value]) => `<span class="confidence-factor">${factorLabels[key] || key} ${Math.round(value * 100)}%</span>`)
+    .filter(([key]) => !key.endsWith("target_count"))
+    .map(([key, value]) => `<span class="confidence-factor">${escapeHtml(factorLabels[key] || key)} ${Math.round(Number(value) * 100)}%</span>`)
     .join("");
   const conductivity = item.predicted_conductivity === null ? p.conductivity_score : item.predicted_conductivity;
   const conductivityLabel = item.predicted_conductivity === null ? "离子传输评分" : "预测电导率";
@@ -384,6 +499,10 @@ function renderCard(item, index) {
   const saveButton = currentUser
     ? `<button class="small-action save-formula" data-save-index="${index}" type="button">保存配方</button>`
     : "";
+  const evidenceTags = (item.evidence_tags || [])
+    .map(tag => `<span class="evidence-tag">${escapeHtml(tag)}</span>`)
+    .join("");
+  const confidenceLevel = item.confidence_level || "low";
   return `
     <article class="result-card" style="animation-delay:${index * 35}ms">
       <div class="card-main">
@@ -395,9 +514,9 @@ function renderCard(item, index) {
           <div class="ratio-labels">${ratioLabels}</div>
         </div>
         <div class="score-group">
-          <div class="score-ring" style="--score:${item.score}%"><b>${item.score}</b></div>
+          <div class="score-ring" style="--score:${item.score}%"><b>${item.score}</b><span>综合分</span></div>
           <div class="metrics">
-            ${metric("置信度", `${item.confidence}%`)}
+            <div class="metric confidence-metric ${confidenceLevel}"><span>置信度 · ${confidenceText(item)}</span><b>${item.confidence}%</b></div>
             ${metric(conductivityLabel, conductivity)}
             ${metric(viscosityLabel, viscosityValue)}
             ${metric(solubilityLabel, solubilityValue)}
@@ -408,9 +527,10 @@ function renderCard(item, index) {
         </div>
       </div>
       <div class="card-detail">
-        <div class="card-actions"><span class="basis">${item.basis}</span>${saveButton}</div>
+        <div class="card-actions"><span class="basis">${escapeHtml(item.basis)}</span>${evidenceTags}${saveButton}</div>
         <div class="reasons">${confidenceFactors}${reasons}${violations}</div>
       </div>
+      ${renderScoreBreakdown(item)}
     </article>`;
 }
 
@@ -429,6 +549,52 @@ function renderPage() {
   pager.classList.toggle("hidden", allRecommendations.length <= pageSize);
 }
 
+function renderResultSummary(summary, runtime, searchSpace) {
+  const box = document.querySelector("#result-summary");
+  if (!summary || !summary.count) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  const elapsed = runtime?.elapsed_ms === undefined ? "-" : `${(runtime.elapsed_ms / 1000).toFixed(1)} 秒`;
+  const refined = searchSpace?.model_refined_formulations || searchSpace?.evaluated_formulations || 0;
+  box.innerHTML = `
+    <div><span>最高综合分</span><b>${summary.top_score}</b></div>
+    <div><span>中位置信度</span><b>${summary.median_confidence}%</b></div>
+    <div><span>严格满足约束</span><b>${summary.strict_count} / ${summary.count}</b></div>
+    <div><span>含 OEDB 模拟</span><b>${summary.oedb_count}</b></div>
+    <div><span>${runtime?.cache_hit ? "缓存命中" : "模型精排"}</span><b>${runtime?.cache_hit ? elapsed : `${refined.toLocaleString()} 个`}</b></div>
+  `;
+  box.classList.remove("hidden");
+}
+
+function startLoadingClock() {
+  const stage = document.querySelector("#loading-stage");
+  const time = document.querySelector("#loading-time");
+  const started = performance.now();
+  clearInterval(loadingTimer);
+  loadingTimer = setInterval(() => {
+    const seconds = Math.floor((performance.now() - started) / 1000);
+    time.textContent = `已用时 ${seconds} 秒`;
+    if (seconds >= 12) stage.textContent = "正在进行模型精排，三元体系需要更久…";
+    else if (seconds >= 4) stage.textContent = "正在计算性质并应用约束…";
+  }, 500);
+}
+
+function stopLoadingClock() {
+  clearInterval(loadingTimer);
+  loadingTimer = null;
+}
+
+function validateScreeningBody(body) {
+  if (!body.salt.trim()) return "请先输入目标锂盐。";
+  if (!Number.isFinite(body.temperature_c) || !Number.isFinite(body.concentration)) return "请检查温度和盐浓度。";
+  if (body.concentration <= 0) return "盐浓度必须大于 0。";
+  const total = Object.values(body.weights).reduce((sum, value) => sum + value, 0);
+  if (Math.abs(total - 1) > 0.001) return "五项目标权重的总和必须为 100%。";
+  return "";
+}
+
 async function runScreening() {
   const button = document.querySelector("#run");
   const loading = document.querySelector("#loading");
@@ -437,7 +603,12 @@ async function runScreening() {
   const notice = document.querySelector("#notice");
   const pager = document.querySelector("#pager");
   const adviceBox = document.querySelector("#feasibility-advice");
+  const resultSummary = document.querySelector("#result-summary");
+  if (activeRequestController) activeRequestController.abort();
+  const requestController = new AbortController();
+  activeRequestController = requestController;
   button.disabled = true;
+  button.innerHTML = "正在筛选 <span>···</span>";
   empty.classList.add("hidden");
   cards.innerHTML = "";
   allRecommendations = [];
@@ -446,7 +617,11 @@ async function runScreening() {
   notice.classList.add("hidden");
   adviceBox.classList.add("hidden");
   adviceBox.innerHTML = "";
+  resultSummary.classList.add("hidden");
   loading.classList.remove("hidden");
+  document.querySelector("#loading-stage").textContent = "正在生成候选组合…";
+  document.querySelector("#loading-time").textContent = "已用时 0 秒";
+  startLoadingClock();
 
   const weights = {};
   weightConfig.forEach(([key]) => weights[key] = Number(document.querySelector(`#w-${key}`).value) / 100);
@@ -467,22 +642,36 @@ async function runScreening() {
     allow_relaxed_fallback: true,
     weights,
   };
+  const validationError = validateScreeningBody(body);
+  if (validationError) {
+    notice.textContent = validationError;
+    notice.classList.remove("hidden");
+    loading.classList.add("hidden");
+    stopLoadingClock();
+    button.disabled = false;
+    button.innerHTML = "开始筛选 <span>→</span>";
+    activeRequestController = null;
+    return;
+  }
   lastRequestBody = body;
+  saveSettings();
 
   try {
     const response = await fetch("/api/recommend", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(body),
+      signal: requestController.signal,
     });
     if (!response.ok) throw new Error(await readErrorMessage(response));
     const data = await response.json();
-    notice.textContent = data.warning;
-    notice.classList.remove("hidden");
+    notice.textContent = data.warning || "";
+    notice.classList.toggle("hidden", !data.warning);
     renderFeasibilityAdvice(data.feasibility_advice);
     document.querySelector("#search-stat").textContent =
-      `${data.search_space.solvents} 种溶剂 · ${data.search_space.evaluated_formulations.toLocaleString()} 个候选 · 返回 ${data.recommendations.length} 个`;
+      `${data.search_space.solvents} 种溶剂 · 全空间 ${data.search_space.evaluated_formulations.toLocaleString()} 个 · 返回 ${data.recommendations.length} 个`;
     allRecommendations = data.recommendations;
+    renderResultSummary(data.result_summary, data.runtime, data.search_space);
     renderPage();
     if (!data.recommendations.length) {
       empty.querySelector("h3").textContent = "当前约束下没有可行结果";
@@ -490,12 +679,18 @@ async function runScreening() {
       empty.classList.remove("hidden");
     }
   } catch (error) {
+    if (error.name === "AbortError") return;
     notice.textContent = `运行失败：${error.message}`;
     notice.classList.remove("hidden");
     empty.classList.remove("hidden");
   } finally {
-    loading.classList.add("hidden");
-    button.disabled = false;
+    if (activeRequestController === requestController) {
+      loading.classList.add("hidden");
+      stopLoadingClock();
+      button.disabled = false;
+      button.innerHTML = "开始筛选 <span>→</span>";
+      activeRequestController = null;
+    }
   }
 }
 
@@ -512,6 +707,10 @@ document.querySelector("#cards").addEventListener("click", event => {
   const button = event.target.closest("[data-save-index]");
   if (button) saveRecommendation(Number(button.dataset.saveIndex));
 });
+document.querySelector("#feasibility-advice").addEventListener("click", event => {
+  const button = event.target.closest("[data-advice-parameter]");
+  if (button) applyAdvice(button.dataset.adviceParameter, button.dataset.adviceValue);
+});
 document.querySelector("#history-list").addEventListener("click", event => {
   const button = event.target.closest("[data-delete-history]");
   if (button) deleteHistoryItem(Number(button.dataset.deleteHistory));
@@ -519,10 +718,13 @@ document.querySelector("#history-list").addEventListener("click", event => {
 document.querySelector("#prev-page").addEventListener("click", () => {
   currentPage -= 1;
   renderPage();
+  document.querySelector(".results-head").scrollIntoView({behavior: "smooth", block: "start"});
 });
 document.querySelector("#next-page").addEventListener("click", () => {
   currentPage += 1;
   renderPage();
+  document.querySelector(".results-head").scrollIntoView({behavior: "smooth", block: "start"});
 });
+document.querySelector(".controls").addEventListener("change", saveSettings);
 loadModelInfo();
 loadSession();

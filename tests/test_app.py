@@ -34,6 +34,8 @@ def test_weight_ui_explains_and_starts_at_one_hundred_percent():
     assert "总权重 100%" in html
     assert "总和始终为 100%" in html
     assert "上方已选权重保持不变" in html
+    assert "优先溶解" in html
+    assert 'id="result-summary"' in html
     assert sum([35, 30, 15, 12, 8]) == 100
 
 
@@ -72,6 +74,11 @@ def test_lino3_extrapolation_recommendations():
     assert len({item["confidence"] for item in data["recommendations"]}) >= 4
     scores = [item["score"] for item in data["recommendations"]]
     assert scores == sorted(scores, reverse=True)
+    assert data["result_summary"]["count"] == 10
+    assert data["search_space"]["model_refined_formulations"] <= data["search_space"]["evaluated_formulations"]
+    assert "runtime" in data
+    assert all(item["score_breakdown"]["targets"] for item in data["recommendations"])
+    assert all(item["confidence_level"] in {"low", "medium", "high"} for item in data["recommendations"])
 
 
 def test_known_salt_uses_ml():
@@ -176,3 +183,18 @@ def test_threshold_mode_can_return_ternary_candidates():
     assert all(row["score"] >= 62 for row in rows)
     assert any(row["component_count"] == 3 for row in rows)
     assert all(sum(component["ratio"] for component in row["components"]) == 100 for row in rows)
+
+
+def test_identical_recommendation_request_uses_bounded_cache():
+    payload = {
+        "salt": "LiBF4",
+        "temperature_c": 33,
+        "top_k": 2,
+        "return_all_above_threshold": False,
+    }
+    first = client.post("/api/recommend", json=payload)
+    second = client.post("/api/recommend", json=payload)
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["runtime"]["cache_hit"] is True
+    assert second.headers["x-ionmix-cache"] == "HIT"

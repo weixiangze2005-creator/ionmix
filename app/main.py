@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import logging
+import json
 import re
+from collections import OrderedDict
+from copy import deepcopy
 from pathlib import Path
+from threading import Lock
+from time import monotonic, perf_counter
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from app import auth_store
-from app.catalog import load_catalog
-from app.ml_model import ConductivityModel
-from app.lino3_model import LiNO3SolubilityModel
-from app.mixture_model import MixturePropertyModel
-from app.oedb_auxiliary_model import OEDBAuxiliaryModel
 from app.recommender import FormulationRecommender, RecommendationOptions
 from app.schemas import AuthRequest, RecommendationRequest, SavedFormulaRequest
 
@@ -27,9 +28,15 @@ app = FastAPI(
     version="0.1.0",
     description="公开数据驱动的电解液二元溶剂与配比预筛选系统",
 )
+app.add_middleware(GZipMiddleware, minimum_size=900)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 recommender = FormulationRecommender()
+_account_status_cache: tuple[float, dict] | None = None
+_account_status_lock = Lock()
+_recommend_cache: OrderedDict[str, dict] = OrderedDict()
+_recommend_cache_lock = Lock()
+_RECOMMEND_CACHE_SIZE = 12
 
 
 def safe_database_error(exc: Exception) -> str:
@@ -47,21 +54,30 @@ def safe_database_error(exc: Exception) -> str:
 
 
 def account_storage_status() -> dict:
+    global _account_status_cache
+    now = monotonic()
+    with _account_status_lock:
+        if _account_status_cache and now - _account_status_cache[0] < 30.0:
+            return dict(_account_status_cache[1])
     backend = "postgresql" if auth_store.using_postgres() else "sqlite"
     try:
         auth_store.init_db()
     except Exception as exc:
         logger.warning("Account database unavailable: %s", safe_database_error(exc))
-        return {
+        status = {
             "backend": backend,
             "persistent": False,
             "available": False,
         }
-    return {
-        "backend": backend,
-        "persistent": bool(auth_store.using_postgres()),
-        "available": True,
-    }
+    else:
+        status = {
+            "backend": backend,
+            "persistent": bool(auth_store.using_postgres()),
+            "available": True,
+        }
+    with _account_status_lock:
+        _account_status_cache = (now, dict(status))
+    return status
 
 
 def ensure_account_storage() -> None:
@@ -192,7 +208,7 @@ def delete_history(formulation_id: int, user: dict = Depends(current_user)):
 
 @app.get("/api/solvents")
 def solvents():
-    df = load_catalog()
+    df = recommender.catalog
     columns = [
         "code", "name", "smiles", "dielectric_constant", "viscosity_mpas",
         "flash_point_c", "donor_number", "battery_role", "pubchem_url",
@@ -242,7 +258,22 @@ def model_info():
 
 
 @app.post("/api/recommend")
-def recommend(request: RecommendationRequest):
+def recommend(request: RecommendationRequest, response: Response):
+    started = perf_counter()
+    cache_key = json.dumps(request.model_dump(), sort_keys=True, ensure_ascii=False)
+    with _recommend_cache_lock:
+        cached = _recommend_cache.get(cache_key)
+        if cached is not None:
+            _recommend_cache.move_to_end(cache_key)
+    if cached is not None:
+        result = deepcopy(cached)
+        result["runtime"] = {
+            "elapsed_ms": round((perf_counter() - started) * 1000.0, 1),
+            "cache_hit": True,
+        }
+        response.headers["X-Ionmix-Cache"] = "HIT"
+        return result
+
     options = RecommendationOptions(
         salt=request.salt,
         temperature_c=request.temperature_c,
@@ -260,4 +291,15 @@ def recommend(request: RecommendationRequest):
         weights=request.weights.model_dump(),
         allow_relaxed_fallback=request.allow_relaxed_fallback,
     )
-    return recommender.recommend(options)
+    result = recommender.recommend(options)
+    result["runtime"] = {
+        "elapsed_ms": round((perf_counter() - started) * 1000.0, 1),
+        "cache_hit": False,
+    }
+    with _recommend_cache_lock:
+        _recommend_cache[cache_key] = deepcopy(result)
+        _recommend_cache.move_to_end(cache_key)
+        while len(_recommend_cache) > _RECOMMEND_CACHE_SIZE:
+            _recommend_cache.popitem(last=False)
+    response.headers["X-Ionmix-Cache"] = "MISS"
+    return result
