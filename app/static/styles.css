@@ -68,6 +68,8 @@ nav { display: flex; justify-content: space-between; align-items: center; positi
   backdrop-filter: blur(12px);
 }
 .model-pill::before { content: ""; display: inline-block; width: 7px; height: 7px; background: var(--acid); border-radius: 50%; margin-right: 7px; }
+.model-pill.degraded { color: #ffe7bf; border-color: rgba(255,196,122,.35); background: rgba(255,160,64,.10); }
+.model-pill.degraded::before { background: var(--orange); }
 .nav-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
 .auth-button {
   width: auto;

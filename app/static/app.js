@@ -109,14 +109,19 @@ async function loadModelInfo() {
     const oedbRows = oedb?.metrics?.training_summary?.rows || 0;
     const solventCount = info.solvent_catalog?.count || 0;
     const solventText = solventCount ? ` · 候选溶剂 ${solventCount} 种` : "";
+    const account = info.account_storage || {};
+    const accountText = account.available
+      ? (account.backend === "postgresql" ? "账户云端存储" : "账户本地存储")
+      : "账户存储待配置";
+    pill.classList.toggle("degraded", !account.available);
     if (mixture?.available) {
       pill.textContent = oedb?.available
-        ? `配方模型在线 · 公开实验 ${mixtureRows.toLocaleString()} 条 · OEDB-MD ${oedbRows.toLocaleString()} 条 · LiNO₃ 二元 ${lino3BinaryRows} 条${solventText}`
-        : `配方模型在线 · 公开实验 ${mixtureRows.toLocaleString()} 条 · LiNO₃ 二元 ${lino3BinaryRows} 条${solventText}`;
+        ? `配方模型在线 · 公开实验 ${mixtureRows.toLocaleString()} 条 · OEDB-MD ${oedbRows.toLocaleString()} 条 · LiNO₃ 二元 ${lino3BinaryRows} 条${solventText} · ${accountText}`
+        : `配方模型在线 · 公开实验 ${mixtureRows.toLocaleString()} 条 · LiNO₃ 二元 ${lino3BinaryRows} 条${solventText} · ${accountText}`;
     } else if (info.available) {
-      pill.textContent = `模型在线 · 电导率 ${info.metrics.train_rows.toLocaleString()} 条 · LiNO₃ 溶解度 ${lino3Rows} 条`;
+      pill.textContent = `模型在线 · 电导率 ${info.metrics.train_rows.toLocaleString()} 条 · LiNO₃ 溶解度 ${lino3Rows} 条 · ${accountText}`;
     } else if (lino3Rows > 0) {
-      pill.textContent = `轻量模型在线 · LiNO₃ 溶解度 ${lino3Rows} 条`;
+      pill.textContent = `轻量模型在线 · LiNO₃ 溶解度 ${lino3Rows} 条 · ${accountText}`;
     } else {
       pill.textContent = "启发式模式 · 模型尚未训练";
     }

@@ -202,11 +202,11 @@ def solvents():
 
 @app.get("/api/model-info")
 def model_info():
-    model = ConductivityModel()
-    lino3_model = LiNO3SolubilityModel()
-    mixture_model = MixturePropertyModel()
-    oedb_model = OEDBAuxiliaryModel()
-    catalog = load_catalog()
+    model = recommender.model
+    lino3_model = recommender.lino3_model
+    mixture_model = recommender.mixture_model
+    oedb_model = recommender.oedb_model
+    catalog = recommender.catalog
     return {
         "available": model.available,
         "metrics": model.metrics,
