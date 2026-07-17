@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from app.catalog import load_catalog
+from app.compatibility import assess_compatibility
 from app.lino3_model import LiNO3SolubilityModel
 from app.ml_model import ConductivityModel
 from app.mixture_model import MixturePropertyModel
@@ -207,8 +208,18 @@ class FormulationRecommender:
         components: list[tuple[pd.Series, float]],
         options: RecommendationOptions,
         relaxed: bool = False,
+        compatibility: dict | None = None,
     ) -> dict:
         solvents = [component for component, _ in components]
+        compatibility = compatibility or assess_compatibility(
+            salt=salt,
+            solvent_codes=[solvent["code"] for solvent in solvents],
+            application=options.application,
+            concentration=options.concentration,
+            exclude_high_hazard=options.exclude_high_hazard,
+        )
+        if compatibility["blocked"]:
+            return {}
         fractions = [float(fraction) for _, fraction in components]
         dielectric = sum(fraction * solvent.dielectric_constant for solvent, fraction in components)
         donor = sum(fraction * solvent.donor_number for solvent, fraction in components)
@@ -312,6 +323,7 @@ class FormulationRecommender:
         ) / weight_sum
         total -= phase_penalty
         total -= constraint_penalty
+        total -= float(compatibility.get("score_penalty", 0.0))
 
         # Avoid nominally "optimal" 50/50 results caused only by smooth linear
         # mixing: reward complementary roles, but only modestly.
@@ -327,6 +339,8 @@ class FormulationRecommender:
         if violations:
             confidence *= max(0.35, 1.0 - constraint_penalty * 1.8)
             basis += " · 放宽约束备选"
+        if compatibility.get("status") == "caution":
+            basis += " · 兼容性风险待验证"
 
         reasons = []
         if dielectric >= 25:
@@ -386,7 +400,14 @@ class FormulationRecommender:
             "reasons": reasons[:3],
             "constraint_status": "relaxed" if violations else "feasible",
             "constraint_violations": violations,
-            "sources": [component["pubchem_url"] for component in component_payload if component["pubchem_url"]],
+            "compatibility_status": compatibility["status"],
+            "compatibility_notes": compatibility["messages"],
+            "compatibility_rule_ids": compatibility["rule_ids"],
+            "compatibility_sources": compatibility["sources"],
+            "sources": sorted({
+                *[component["pubchem_url"] for component in component_payload if component["pubchem_url"]],
+                *compatibility["sources"],
+            }),
             "_transport_score": transport_score,
             "_heuristic_solubility_score": solubility,
             "_solubility_weight": weights["solubility"] / weight_sum,
@@ -430,10 +451,36 @@ class FormulationRecommender:
 
     def _generate_candidates(
         self, salt: str, options: RecommendationOptions, relaxed: bool
-    ) -> list[dict]:
+    ) -> tuple[list[dict], dict]:
         candidates = []
+        compatibility_stats = {
+            "blocked_formulations": 0,
+            "blocked_rule_counts": {},
+        }
+
+        def record_block(assessment: dict, formulation_count: int) -> None:
+            compatibility_stats["blocked_formulations"] += formulation_count
+            for rule in assessment["matched_rules"]:
+                if rule["severity"] != "block":
+                    continue
+                rule_id = rule["id"]
+                compatibility_stats["blocked_rule_counts"][rule_id] = (
+                    compatibility_stats["blocked_rule_counts"].get(rule_id, 0)
+                    + formulation_count
+                )
+
         for (_, a), (_, b) in combinations(self.catalog.iterrows(), 2):
             if not self._components_allowed([a, b], options, relaxed=relaxed):
+                continue
+            compatibility = assess_compatibility(
+                salt=salt,
+                solvent_codes=[a["code"], b["code"]],
+                application=options.application,
+                concentration=options.concentration,
+                exclude_high_hazard=options.exclude_high_hazard,
+            )
+            if compatibility["blocked"]:
+                record_block(compatibility, 17)
                 continue
             for ratio in np.arange(0.10, 0.91, 0.05):
                 result = self._evaluate(
@@ -441,6 +488,7 @@ class FormulationRecommender:
                     [(a, float(ratio)), (b, float(1.0 - ratio))],
                     options,
                     relaxed=relaxed,
+                    compatibility=compatibility,
                 )
                 if result:
                     candidates.append(result)
@@ -451,21 +499,36 @@ class FormulationRecommender:
                 (0.40, 0.40, 0.20),
                 (0.60, 0.25, 0.15),
             }
+            ternary_orders = sorted({
+                ordered
+                for ratios in ternary_templates
+                for ordered in set(permutations(ratios))
+            })
             for (_, a), (_, b), (_, c) in combinations(self._ternary_catalog(options).iterrows(), 3):
                 solvents = [a, b, c]
                 if not self._components_allowed(solvents, options, relaxed=relaxed):
                     continue
-                for ratios in ternary_templates:
-                    for ordered in set(permutations(ratios)):
-                        result = self._evaluate(
-                            salt,
-                            list(zip(solvents, ordered)),
-                            options,
-                            relaxed=relaxed,
-                        )
-                        if result:
-                            candidates.append(result)
-        return candidates
+                compatibility = assess_compatibility(
+                    salt=salt,
+                    solvent_codes=[solvent["code"] for solvent in solvents],
+                    application=options.application,
+                    concentration=options.concentration,
+                    exclude_high_hazard=options.exclude_high_hazard,
+                )
+                if compatibility["blocked"]:
+                    record_block(compatibility, len(ternary_orders))
+                    continue
+                for ordered in ternary_orders:
+                    result = self._evaluate(
+                        salt,
+                        list(zip(solvents, ordered)),
+                        options,
+                        relaxed=relaxed,
+                        compatibility=compatibility,
+                    )
+                    if result:
+                        candidates.append(result)
+        return candidates, compatibility_stats
 
     @staticmethod
     def _candidate_identity(item: dict) -> tuple:
@@ -558,6 +621,9 @@ class FormulationRecommender:
         }
 
         confidence = float(item.get("confidence", 0.0))
+        if item.get("compatibility_status") == "caution":
+            confidence *= 0.88
+            item["confidence"] = round(confidence, 1)
         if confidence >= 72:
             level, label = "high", "较高"
         elif confidence >= 48:
@@ -754,11 +820,15 @@ class FormulationRecommender:
 
     def recommend(self, options: RecommendationOptions) -> dict:
         salt = canonical_salt(options.salt)
-        candidates = self._generate_candidates(salt, options, relaxed=False)
+        candidates, compatibility_stats = self._generate_candidates(
+            salt, options, relaxed=False
+        )
         feasible_count = len(candidates)
         used_relaxed_fallback = False
         if len(self._select_diverse(candidates, options.top_k)) < options.top_k and options.allow_relaxed_fallback:
-            relaxed_candidates = self._generate_candidates(salt, options, relaxed=True)
+            relaxed_candidates, _ = self._generate_candidates(
+                salt, options, relaxed=True
+            )
             existing = {
                 (item["solvent_a"], item["solvent_b"], item["ratio_a"]) for item in candidates
             }
@@ -993,6 +1063,10 @@ class FormulationRecommender:
             "strict_count": sum(item["constraint_status"] == "feasible" for item in selected),
             "relaxed_count": sum(item["constraint_status"] == "relaxed" for item in selected),
             "oedb_count": sum("OEDB-MD" in item.get("basis", "") for item in selected),
+            "compatibility_caution_count": sum(
+                item.get("compatibility_status") == "caution" for item in selected
+            ),
+            "compatibility_blocked_count": compatibility_stats["blocked_formulations"],
             "top_score": max(score_values) if score_values else None,
             "lowest_score": min(score_values) if score_values else None,
             "median_confidence": round(float(np.median(confidence_values)), 1) if confidence_values else None,
@@ -1023,9 +1097,18 @@ class FormulationRecommender:
                     item["constraint_status"] == "relaxed" for item in selected
                 )
                 else ""
+            ) + (
+                f" 专业兼容性规则已在排序前排除 {compatibility_stats['blocked_formulations']:,} 个不推荐配比。"
+                if compatibility_stats["blocked_formulations"] > 0
+                else ""
             ),
             "recommendations": selected,
             "result_summary": result_summary,
+            "compatibility_filter": {
+                **compatibility_stats,
+                "enabled": True,
+                "policy": "conservative_battery_engineering",
+            },
             "feasibility_advice": feasibility_advice,
             "search_space": {
                 "solvents": len(self.catalog),
@@ -1035,6 +1118,12 @@ class FormulationRecommender:
                 "returned_formulations": len(selected),
                 "return_all_above_threshold": options.return_all_above_threshold,
                 "evaluated_formulations": len(candidates),
+                "generated_formulations": (
+                    len(candidates) + compatibility_stats["blocked_formulations"]
+                ),
+                "compatibility_blocked_formulations": compatibility_stats[
+                    "blocked_formulations"
+                ],
                 "model_refined_formulations": len(model_candidates),
                 "feasible_formulations": feasible_count,
                 "used_relaxed_fallback": used_relaxed_fallback,

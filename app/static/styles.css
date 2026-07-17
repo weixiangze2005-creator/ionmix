@@ -178,7 +178,7 @@ button:disabled { opacity: .6; cursor: wait; transform: none; }
 .search-stat span { color: #89948c; }
 .search-stat b { color: #4e5d54; font-weight: 750; }
 .result-summary {
-  display: grid; grid-template-columns: repeat(5, minmax(105px, 1fr)); gap: 8px;
+  display: grid; grid-template-columns: repeat(6, minmax(95px, 1fr)); gap: 8px;
   margin-bottom: 16px; padding: 10px; border: 1px solid #d8dbd1; border-radius: 14px;
   background: rgba(255,255,255,.46); box-shadow: 0 8px 24px rgba(22,35,27,.05);
 }
@@ -275,6 +275,7 @@ button:disabled { opacity: .6; cursor: wait; transform: none; }
 .reasons { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .reason { padding: 4px 7px; background: rgba(255,255,255,.65); border-radius: 4px; }
 .reason.violation { color: #8b3d1f; background: #ffe2d4; }
+.reason.compatibility { color: #745019; background: #ffe9b8; }
 .confidence-factor { padding: 4px 7px; color: #254d3e; background: #dce9df; border-radius: 4px; }
 .evidence-tag { padding: 4px 7px; color: #315143; background: rgba(217,255,71,.34); border-radius: 999px; white-space: nowrap; }
 .score-explain { margin: 0; padding: 0 20px 15px; border-top: 0; background: #f1f1e9; }

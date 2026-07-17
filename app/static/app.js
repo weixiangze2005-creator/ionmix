@@ -461,6 +461,8 @@ function renderCard(item, index) {
   const reasons = item.reasons.map(x => `<span class="reason">${escapeHtml(x)}</span>`).join("");
   const violations = (item.constraint_violations || [])
     .map(x => `<span class="reason violation">${escapeHtml(x)}</span>`).join("");
+  const compatibilityNotes = (item.compatibility_notes || [])
+    .map(x => `<span class="reason compatibility">兼容性提醒：${escapeHtml(x)}</span>`).join("");
   const factorLabels = {
     domain_similarity: "训练域相似",
     ensemble_agreement: "模型一致",
@@ -528,7 +530,7 @@ function renderCard(item, index) {
       </div>
       <div class="card-detail">
         <div class="card-actions"><span class="basis">${escapeHtml(item.basis)}</span>${evidenceTags}${saveButton}</div>
-        <div class="reasons">${confidenceFactors}${reasons}${violations}</div>
+        <div class="reasons">${confidenceFactors}${reasons}${compatibilityNotes}${violations}</div>
       </div>
       ${renderScoreBreakdown(item)}
     </article>`;
@@ -563,6 +565,7 @@ function renderResultSummary(summary, runtime, searchSpace) {
     <div><span>中位置信度</span><b>${summary.median_confidence}%</b></div>
     <div><span>严格满足约束</span><b>${summary.strict_count} / ${summary.count}</b></div>
     <div><span>含 OEDB 模拟</span><b>${summary.oedb_count}</b></div>
+    <div><span>规则预先排除</span><b>${(summary.compatibility_blocked_count || 0).toLocaleString()}</b></div>
     <div><span>${runtime?.cache_hit ? "缓存命中" : "模型精排"}</span><b>${runtime?.cache_hit ? elapsed : `${refined.toLocaleString()} 个`}</b></div>
   `;
   box.classList.remove("hidden");

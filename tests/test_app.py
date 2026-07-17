@@ -4,6 +4,7 @@ os.environ["IONMIX_CONDUCTIVITY_MODEL"] = "enabled"
 
 from fastapi.testclient import TestClient
 
+from app.compatibility import assess_compatibility
 from app.main import app
 from app.recommender import canonical_salt
 
@@ -25,6 +26,8 @@ def test_health_and_model():
     assert info["oedb_auxiliary_model"]["available"] is True
     assert info["oedb_auxiliary_model"]["metrics"]["training_summary"]["rows"] == 5616
     assert "LiPF6" in info["oedb_auxiliary_model"]["supported_salts"]
+    assert info["compatibility_rules"]["enabled"] is True
+    assert info["compatibility_rules"]["count"] >= 4
 
 
 def test_weight_ui_explains_and_starts_at_one_hundred_percent():
@@ -42,6 +45,31 @@ def test_weight_ui_explains_and_starts_at_one_hundred_percent():
 def test_salt_alias():
     assert canonical_salt("硝酸锂") == "LiNO3"
     assert canonical_salt(" lipf6 ") == "LiPF6"
+
+
+def test_compatibility_engine_blocks_lino3_dmso_before_ranking():
+    assessment = assess_compatibility(
+        salt="LiNO3",
+        solvent_codes=["DMSO", "DME"],
+        application="lithium_metal",
+        concentration=1.0,
+        exclude_high_hazard=True,
+    )
+    assert assessment["blocked"] is True
+    assert assessment["status"] == "blocked"
+    assert "lino3_dmso_conservative_exclusion" in assessment["rule_ids"]
+    assert assessment["sources"]
+
+    caution = assess_compatibility(
+        salt="LiTFSI",
+        solvent_codes=["EC", "DMC"],
+        application="high_voltage",
+        concentration=1.0,
+        exclude_high_hazard=True,
+    )
+    assert caution["blocked"] is False
+    assert caution["status"] == "caution"
+    assert caution["score_penalty"] > 0
 
 
 def test_lino3_extrapolation_recommendations():
@@ -68,7 +96,9 @@ def test_lino3_extrapolation_recommendations():
         for item in data["recommendations"]
         for code in (item["solvent_a"], item["solvent_b"])
     }
-    assert "DMSO" in solvent_codes
+    assert "DMSO" not in solvent_codes
+    assert data["compatibility_filter"]["blocked_formulations"] > 0
+    assert "lino3_dmso_conservative_exclusion" in data["compatibility_filter"]["blocked_rule_counts"]
     assert all(item["ratio_a"] + item["ratio_b"] == 100 for item in data["recommendations"])
     assert all(item["predicted_solubility_mole_fraction"] is not None for item in data["recommendations"])
     assert len({item["confidence"] for item in data["recommendations"]}) >= 4
@@ -79,6 +109,10 @@ def test_lino3_extrapolation_recommendations():
     assert "runtime" in data
     assert all(item["score_breakdown"]["targets"] for item in data["recommendations"])
     assert all(item["confidence_level"] in {"low", "medium", "high"} for item in data["recommendations"])
+    assert all(
+        "DMSO" not in {component["code"] for component in item["components"]}
+        for item in data["recommendations"]
+    )
 
 
 def test_known_salt_uses_ml():

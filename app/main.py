@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from app import auth_store
+from app.compatibility import public_rule_catalog
 from app.recommender import FormulationRecommender, RecommendationOptions
 from app.schemas import AuthRequest, RecommendationRequest, SavedFormulaRequest
 
@@ -223,6 +224,7 @@ def model_info():
     mixture_model = recommender.mixture_model
     oedb_model = recommender.oedb_model
     catalog = recommender.catalog
+    compatibility_rules = public_rule_catalog()
     return {
         "available": model.available,
         "metrics": model.metrics,
@@ -233,6 +235,11 @@ def model_info():
         "solvent_catalog": {
             "count": int(len(catalog)),
             "oedb_overlap_count": int(catalog["oedb_code"].astype(str).str.len().gt(0).sum()),
+        },
+        "compatibility_rules": {
+            "enabled": True,
+            "count": len(compatibility_rules),
+            "rules": compatibility_rules,
         },
         "account_storage": {
             **account_storage_status(),
